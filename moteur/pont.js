@@ -282,11 +282,94 @@ async def _appeler(methode, chemin, charge, entetes_json):
    */
   const DOSSIERS_DURABLES = ["/kovex/workspaces", "/kovex/audit"];
 
+  //: Nom du verrou d'écriture. Un seul onglet écrit le disque durable.
+  const VERROU_DU_DISQUE = "kovex-disque";
+
   let disqueDurable = false;
   let sauvegardeEnCours = Promise.resolve();
   let sauvegarde = async () => {};
 
+  /**
+   * Prend le verrou d'écriture, ou dit qu'un autre onglet l'a.
+   *
+   * IndexedDB ne fusionne rien : chaque onglet tient son propre système de
+   * fichiers en mémoire, et une sauvegarde écrit **ce que cet onglet-là
+   * contient**. Deux onglets ouverts, et le second effacait le travail du
+   * premier — c'est arrivé : un espace de travail importé dans un onglet a
+   * disparu quand l'autre a sauvegardé.
+   *
+   * Un verrou exclusif règle la question sans rien inventer : le premier
+   * onglet écrit, les suivants travaillent en mémoire et **le disent**. Le
+   * verrou est tenu pour toute la vie de la page — d'où la promesse qui ne se
+   * résout jamais — et le navigateur le rend dès que l'onglet se ferme.
+   */
+  async function prendreLeVerrou() {
+    if (!navigator.locks || typeof navigator.locks.request !== "function") {
+      // Navigateur sans l'API des verrous : on ne peut pas garantir l'unicité.
+      // Continuer en écrivant est le comportement d'avant ; le taire, non.
+      console.warn("kovex: ce navigateur n'a pas l'API des verrous — si la page "
+                   + "est ouverte dans deux onglets, le dernier enregistrement "
+                   + "écrase l'autre.");
+      return true;
+    }
+    return new Promise((tenu) => {
+      navigator.locks.request(
+        VERROU_DU_DISQUE, { mode: "exclusive", ifAvailable: true },
+        (verrou) => {
+          if (!verrou) {
+            tenu(false);
+            return undefined;
+          }
+          tenu(true);
+          // Tenu jusqu'à la fermeture de l'onglet.
+          return new Promise(function () {});
+        }).catch(function () { tenu(true); });
+    });
+  }
+
+  /**
+   * Prévient que rien ne sera conservé, par les moyens de l'interface.
+   *
+   * Le message passe par le catalogue quand il est chargé, et tombe sur un
+   * texte de repli sinon : le pont se met en place avant l'i18n du produit.
+   */
+  function prevenirQueRienNEstConserve(cause) {
+    const dire = (cle, repli) => {
+      const traduit = (typeof I18n !== "undefined" && typeof I18n.t === "function")
+        ? I18n.t(cle) : cle;
+      return traduit === cle ? repli : traduit;
+    };
+    const titre = dire("page.disque.partage_titre", "Un autre onglet a la main");
+    const texte = dire("page.disque.partage",
+                       "Kovex est deja ouvert dans un autre onglet. Ce que vous "
+                       + "faites ici ne sera pas conserve : fermez cet onglet et "
+                       + "travaillez dans l'autre.");
+    console.warn("kovex: " + texte + (cause ? " (" + cause + ")" : ""));
+    window.dispatchEvent(new CustomEvent("kovex:disque", {
+      detail: { durable: false, cause: cause || "verrou tenu ailleurs" } }));
+    // L'avertissement doit atteindre l'écran, pas seulement la console.
+    const annoncer = () => {
+      if (typeof Toast !== "undefined" && typeof Toast.warning === "function") {
+        Toast.warning(titre, texte);
+        return true;
+      }
+      return false;
+    };
+    if (!annoncer()) {
+      let essais = 0;
+      const attente = setInterval(() => {
+        essais += 1;
+        if (annoncer() || essais > 60) clearInterval(attente);
+      }, 500);
+    }
+  }
+
   async function monterLeDisque(pyodide) {
+    if (!(await prendreLeVerrou())) {
+      disqueDurable = false;
+      prevenirQueRienNEstConserve(null);
+      return;
+    }
     try {
       for (const dossier of DOSSIERS_DURABLES) {
         pyodide.FS.mkdirTree(dossier);
@@ -525,6 +608,11 @@ async def _appeler(methode, chemin, charge, entetes_json):
     const posee = declaration || lireLaDeclarationRetenue();
     return JSON.parse(await declarerAuMoteur(posee ? JSON.stringify(posee) : ""));
   }
+
+  /** Ce que la page peut dire de son disque : durable, ou mémoire seule. */
+  window.KovexDisque = {
+    durable() { return disqueDurable; },
+  };
 
   window.KovexModele = {
     /**

@@ -75,10 +75,117 @@ starlette.concurrency.run_in_threadpool = (
 
 from src.api.main import app
 import json as _json
+import js
+from pyodide.ffi import to_js
+# Le seul point reseau du produit est annotateur._poster, et il parle par
+# urllib, qui n'existe pas dans un navigateur. On remplace **le transport**, et
+# rien d'autre : la charge est construite en amont par le produit, la matrice
+# d'assistance decide de ce qui peut sortir, et les identites n'en font jamais
+# partie. Ce qui est remplace ici ne decide de rien.
+#
+# Les erreurs rendues sont celles que le produit attend, parce que c'est elles
+# qui pilotent son comportement : une HTTPError 4xx fait redescendre d'un cran
+# la contrainte de generation, une URLError fait dire "modele injoignable".
+# Rendre autre chose changerait le comportement sans changer une ligne de
+# Kovex.
+#
+# Une limite propre au navigateur, et il faut la dire : l'appel part de
+# l'origine de la page. Le serveur de modele doit l'autoriser (pour Ollama,
+# OLLAMA_ORIGINS). Un serveur qui refuse l'origine donne un refus reseau, que
+# l'interface affiche comme un modele injoignable.
+import urllib.error
+from src.core.annotation import annotateur as _annotateur
 
-async def _appeler(methode, chemin, requete, entetes_json):
-    """Conduit une requête à travers la pile ASGI, sans réseau."""
-    corps = requete.encode() if requete else b""
+
+def _aller_retour(adresse, entetes, corps, delai_ms):
+    """Un aller-retour HTTP par le navigateur. Rend (statut, texte)."""
+    import js
+    from pyodide.ffi import to_js
+
+    import pyodide.ffi as _ffi
+
+    run_sync = getattr(_ffi, "run_sync", None)
+    if run_sync is not None:
+        options = to_js(
+            {"method": "POST", "headers": entetes, "body": corps,
+             "signal": js.AbortSignal.timeout(delai_ms)},
+            dict_converter=js.Object.fromEntries)
+        reponse = run_sync(js.fetch(adresse, options))
+        return int(reponse.status), str(run_sync(reponse.text()))
+
+    # Sans JSPI, il reste la requete synchrone. Elle fige l'onglet le temps de
+    # la reponse : c'est moins bon, mais c'est mieux que pas de modele.
+    requete = js.XMLHttpRequest.new()
+    requete.open("POST", adresse, False)
+    for cle, valeur in entetes.items():
+        requete.setRequestHeader(cle, valeur)
+    requete.timeout = delai_ms
+    requete.send(corps)
+    return int(requete.status), str(requete.responseText or "")
+
+
+def _poster_par_le_navigateur(charge, reglages):
+    adresse = reglages.adresse + "/chat/completions"
+    try:
+        statut, texte = _aller_retour(
+            adresse, _annotateur.entetes(reglages), _json.dumps(charge),
+            int(float(reglages.delai_s) * 1000))
+    except Exception as erreur:  # une panne de reseau, un refus d'origine
+        # L'adresse est nommee, jamais la cle : elle ne figure que dans
+        # l'en-tete d'autorisation, et ne doit pas atterrir dans un journal.
+        raise urllib.error.URLError(
+            "appel au modele impossible (%s) : %s"
+            % (adresse, type(erreur).__name__)) from None
+
+    if statut >= 400:
+        raise urllib.error.HTTPError(adresse, statut, texte[:200], None, None)
+
+    brut = texte.encode("utf-8")[: _annotateur.REPONSE_MAX_OCTETS]
+    return _json.loads(brut.decode("utf-8", "ignore"))
+
+
+_annotateur._poster = _poster_par_le_navigateur
+
+
+def _declarer_le_modele(reglages_json):
+    """Pose, ou retire, les reglages du modele dans l'environnement.
+
+    Sur un poste, c'est l'infrastructure qui pose ces variables. Dans une page,
+    l'infrastructure, c'est la personne qui l'ouvre : elle declare l'adresse et
+    le modele, et le produit se comporte exactement comme s'ils venaient d'un
+    fichier d'environnement. Sans declaration, l'annotateur n'existe pas —
+    c'est le defaut du produit, et il est conserve.
+    """
+    declare = _json.loads(reglages_json) if reglages_json else {}
+    for nom, cle in (("URL", "adresse"), ("MODELE", "modele"),
+                     ("CLE", "cle"), ("DELAI_S", "delai")):
+        variable = "KOVEX_ANNOTATEUR_" + nom
+        valeur = str(declare.get(cle) or "").strip()
+        if valeur:
+            os.environ[variable] = valeur
+        else:
+            os.environ.pop(variable, None)
+    return _json.dumps({
+        "adresse": os.environ.get("KOVEX_ANNOTATEUR_URL", ""),
+        "modele": os.environ.get("KOVEX_ANNOTATEUR_MODELE", ""),
+        "cle_posee": bool(os.environ.get("KOVEX_ANNOTATEUR_CLE", "")),
+    })
+
+
+
+async def _appeler(methode, chemin, charge, entetes_json):
+    """Conduit une requete a travers la pile ASGI, sans reseau.
+
+    La charge arrive en **octets**, jamais en texte : l'import de fichiers
+    passe par un envoi multipart, dont le corps n'est pas du texte et dont la
+    frontiere est calculee par le navigateur. Le convertir en chaine le
+    corromprait sur le premier octet non representable, et l'erreur
+    apparaitrait dans l'analyseur multipart, tres loin de sa cause.
+
+    Aucun accent grave dans ce bloc : il traverse un gabarit JavaScript, qui
+    s'y refermerait.
+    """
+    corps = bytes(charge.to_py()) if charge is not None else b""
     chemin, _, requete_brute = chemin.partition("?")
     entetes = [(cle.lower().encode(), valeur.encode())
                for cle, valeur in _json.loads(entetes_json).items()]
@@ -100,15 +207,23 @@ async def _appeler(methode, chemin, requete, entetes_json):
     debut = next(m for m in recu if m["type"] == "http.response.start")
     charge = b"".join(m.get("body", b"") for m in recu
                       if m["type"] == "http.response.body")
-    return _json.dumps({
-        "statut": debut["status"],
-        "entetes": {cle.decode(): valeur.decode() for cle, valeur in debut["headers"]},
-        "corps": charge.decode("utf-8", "replace"),
-    })
+
+    # Le corps repart en **octets**, jamais en texte. Il etait decode en UTF-8
+    # avec remplacement des octets invalides : un classeur ou un PDF telecharge
+    # depuis la page arrivait corrompu — l'en-tete du fichier survivait, le
+    # reste non, et le classeur ne s'ouvrait plus. Un corps de reponse n'est pas
+    # du texte, meme quand il en contient.
+    rendu = js.Array.new()
+    rendu.push(debut["status"])
+    rendu.push(_json.dumps(
+        {cle.decode(): valeur.decode() for cle, valeur in debut["headers"]}))
+    rendu.push(js.Uint8Array.new(to_js(charge)))
+    return rendu
 `;
 
   let pretDuMoteur = null;
   let appeler = null;
+  let declarerAuMoteur = null;
 
   /**
    * L'avancement du demarrage, dans le loader que l'interface a deja.
@@ -148,6 +263,73 @@ async def _appeler(methode, chemin, requete, entetes_json):
       detail: { etape: etape, part: part } }));
   }
 
+  /**
+   * Le disque de la page : ce qui doit survivre à la fermeture de l'onglet.
+   *
+   * Sur un poste, les espaces de travail et la piste d'audit sont des fichiers.
+   * Dans une page, le système de fichiers de Pyodide vit en mémoire : fermer
+   * l'onglet perdait l'import, les rôles validés et la piste — c'est-à-dire
+   * tout le travail. Ces deux dossiers sont donc montés sur IndexedDB, le seul
+   * stockage durable qu'un navigateur offre sans rien demander.
+   *
+   * `config/` reste en mémoire, et c'est voulu : il vient de l'archive du
+   * produit (les catalogues de langue, la configuration de repli). Le monter
+   * masquerait ce que l'archive dépose.
+   *
+   * Un navigateur qui refuse le stockage — fenêtre privée, quota épuisé — ne
+   * doit pas empêcher de travailler : on le dit, et la page continue en
+   * mémoire seule.
+   */
+  const DOSSIERS_DURABLES = ["/kovex/workspaces", "/kovex/audit"];
+
+  let disqueDurable = false;
+  let sauvegardeEnCours = Promise.resolve();
+  let sauvegarde = async () => {};
+
+  async function monterLeDisque(pyodide) {
+    try {
+      for (const dossier of DOSSIERS_DURABLES) {
+        pyodide.FS.mkdirTree(dossier);
+        pyodide.FS.mount(pyodide.FS.filesystems.IDBFS, {}, dossier);
+      }
+      // `true` : on lit ce qui était là. C'est cette lecture qui fait qu'une
+      // page rouverte retrouve son espace de travail.
+      await new Promise((tenu, rompu) => {
+        pyodide.FS.syncfs(true, (erreur) => (erreur ? rompu(erreur) : tenu()));
+      });
+      disqueDurable = true;
+      sauvegarde = () => new Promise((tenu) => {
+        pyodide.FS.syncfs(false, (erreur) => {
+          if (erreur) {
+            // Un quota atteint ne doit pas passer sous silence : le travail
+            // en cours tient encore en mémoire, mais il ne survivra pas.
+            console.error("kovex: sauvegarde impossible — " + erreur);
+            window.dispatchEvent(new CustomEvent("kovex:sauvegarde", {
+              detail: { tenue: false, cause: String(erreur) } }));
+          }
+          tenu();
+        });
+      });
+    } catch (erreur) {
+      disqueDurable = false;
+      console.warn("kovex: stockage durable indisponible, le travail de cette "
+                   + "page ne survivra pas à sa fermeture — " + erreur);
+    }
+  }
+
+  /**
+   * Écrit sur le disque durable ce que l'appel vient de changer.
+   *
+   * Appelé **avant** que la réponse ne parte, et non plus tard : quelqu'un qui
+   * ferme l'onglet juste après avoir validé un rôle doit retrouver ce rôle. Les
+   * sauvegardes sont mises en file pour qu'elles ne se chevauchent pas.
+   */
+  function enregistrer() {
+    if (!disqueDurable) return Promise.resolve();
+    sauvegardeEnCours = sauvegardeEnCours.then(sauvegarde, sauvegarde);
+    return sauvegardeEnCours;
+  }
+
   async function demarrer() {
     annoncer("runtime", 5);
     const pyodide = await loadPyodide({ indexURL: RACINE });
@@ -166,9 +348,13 @@ async def _appeler(methode, chemin, requete, entetes_json):
       await (await fetch(RACINE + "kovex-src.zip")).arrayBuffer());
     pyodide.unpackArchive(source, "zip", { extractDir: "/kovex" });
 
+    await monterLeDisque(pyodide);
+
     annoncer("api", 85);
     await pyodide.runPythonAsync(PREPARATION);
     appeler = pyodide.globals.get("_appeler");
+    declarerAuMoteur = pyodide.globals.get("_declarer_le_modele");
+    await appliquerLaDeclaration();
 
     annoncer("pret", 100);
     return pyodide;
@@ -180,38 +366,214 @@ async def _appeler(methode, chemin, requete, entetes_json):
    * Tout le reste — les feuilles de style, les polices, les données de la page
    * elle-même — passe par le `fetch` d'origine. On ne détourne que ce qui
    * s'adressait au serveur.
+   *
+   * Ce que le navigateur faisait dans ce `fetch` et qu'il ne fait plus est une
+   * différence pour l'interface. L'interface n'a pas été touchée : c'est donc
+   * au pont de le refaire. Les redirections en sont une — le produit répond
+   * `307` sur `/api/v1/workspaces` vers la route avec barre finale, un vrai
+   * `fetch` la suit sans que l'appelant l'apprenne, et l'écran des workspaces
+   * affichait « Chargement impossible ».
    */
   const fetchOrigine = window.fetch.bind(window);
 
-  window.fetch = async function (ressource, options) {
-    const adresse = typeof ressource === "string" ? ressource
-                  : (ressource && ressource.url) || String(ressource);
-    const chemin = adresse.replace(/^https?:\/\/[^/]+/, "");
+  const ADRESSE_LOCALE = "http://kovex.page";
 
-    if (!/^\/(api\/|health\b)/.test(chemin)) {
+  //: Les codes qu'un `fetch` suit de lui-même.
+  const REDIRECTIONS = [301, 302, 303, 307, 308];
+
+  //: La borne du navigateur : au-delà, `fetch` rend une erreur de réseau.
+  const REDIRECTIONS_MAX = 20;
+
+  //: Les statuts auxquels un corps est interdit. Le constructeur de `Response`
+  //: refuse la chaîne vide pour ceux-là — il faut `null`.
+  const SANS_CORPS = [101, 103, 204, 205, 304];
+
+  function estUneAdresseDeLApi(chemin) {
+    return /^\/(api\/|health\b)/.test(chemin);
+  }
+
+  function cheminDe(adresse) {
+    return String(adresse).replace(/^https?:\/\/[^/]+/, "");
+  }
+
+  /**
+   * Conduit un appel jusqu'à l'application ASGI et rend ce qu'elle a produit.
+   *
+   * Le corps traverse en octets dans les deux sens : un envoi multipart n'est
+   * pas du texte, et un classeur ou un PDF téléchargé ne l'est pas davantage.
+   */
+  async function traverser(methode, chemin, octets, entetes) {
+    const rendu = await appeler(methode, chemin, octets, JSON.stringify(entetes));
+    const statut = rendu[0];
+    const entetesRendus = JSON.parse(rendu[1]);
+    // La copie est nécessaire : la vue rendue par le moteur pointe dans sa
+    // mémoire, que l'appel suivant réutilise.
+    const corps = new Uint8Array(rendu[2]);
+    if (typeof rendu.destroy === "function") rendu.destroy();
+    return { statut: statut, entetes: entetesRendus, corps: corps };
+  }
+
+  window.fetch = async function (ressource, options) {
+    const chemin = cheminDe(typeof ressource === "string" ? ressource
+                            : (ressource && ressource.url) || String(ressource));
+
+    if (!estUneAdresseDeLApi(chemin)) {
       return fetchOrigine(ressource, options);
     }
 
     if (!pretDuMoteur) pretDuMoteur = demarrer();
     await pretDuMoteur;
 
-    const reglages = options || {};
+    // On passe par `Request` pour que le navigateur fasse ce qu'il ferait
+    // vraiment : sérialiser un `FormData` en multipart, calculer la frontière,
+    // et poser le `Content-Type` qui va avec. Reconstruire tout cela à la main
+    // reviendrait à réécrire une partie du navigateur — et à s'en écarter.
+    const demande = new Request(ADRESSE_LOCALE + chemin,
+                                Object.assign({}, options || {}));
+    const suivi = demande.redirect || "follow";
+
+    let methode = demande.method;
+    let adresse = chemin;
+    let octets = new Uint8Array(await demande.arrayBuffer());
     const entetes = {};
-    if (reglages.headers) {
-      const lus = reglages.headers instanceof Headers
-        ? reglages.headers : new Headers(reglages.headers);
-      lus.forEach((valeur, cle) => { entetes[cle] = valeur; });
+    demande.headers.forEach((valeur, cle) => { entetes[cle] = valeur; });
+
+    for (let saut = 0; ; saut += 1) {
+      const rendu = await traverser(methode, adresse, octets, entetes);
+      const emplacement = rendu.entetes
+        && (rendu.entetes.location || rendu.entetes.Location);
+      const redirige = REDIRECTIONS.indexOf(rendu.statut) !== -1 && emplacement;
+
+      if (!redirige || suivi === "manual") {
+        // Un appel qui a pu écrire — tout ce qui n'est pas une lecture — est
+        // suivi d'une sauvegarde, avant que l'interface ne reprenne la main.
+        if (methode !== "GET" && methode !== "HEAD" && rendu.statut < 400) {
+          await enregistrer();
+        }
+        const corps = SANS_CORPS.indexOf(rendu.statut) !== -1 ? null : rendu.corps;
+        return new Response(corps, { status: rendu.statut, headers: rendu.entetes });
+      }
+
+      if (suivi === "error") {
+        throw new TypeError("kovex: redirection refusée vers " + emplacement);
+      }
+
+      if (saut + 1 >= REDIRECTIONS_MAX) {
+        throw new TypeError("kovex: trop de redirections depuis " + chemin);
+      }
+
+      const cible = new URL(emplacement, ADRESSE_LOCALE + adresse);
+      const suite = cible.pathname + cible.search;
+
+      // Une redirection qui sort de l'API désigne un document de la page :
+      // c'est au `fetch` d'origine de le chercher, sur la vraie origine.
+      if (!estUneAdresseDeLApi(suite)) {
+        return fetchOrigine(suite, { method: methode === "HEAD" ? "HEAD" : "GET" });
+      }
+
+      // La règle est celle de `fetch` : `307` et `308` reconduisent la même
+      // requête, les autres repartent en `GET` et **sans corps** — un `POST`
+      // rejoué sur la cible d'un `303` enverrait deux fois la même écriture.
+      if (rendu.statut === 303 ? methode !== "GET" && methode !== "HEAD"
+                               : rendu.statut !== 307 && rendu.statut !== 308) {
+        methode = "GET";
+        octets = new Uint8Array(0);
+        delete entetes["content-type"];
+        delete entetes["content-length"];
+      }
+      adresse = suite;
     }
+  };
 
-    const rendu = JSON.parse(await appeler(
-      reglages.method || "GET", chemin,
-      typeof reglages.body === "string" ? reglages.body : "",
-      JSON.stringify(entetes)));
+  /**
+   * Le moteur de modèle, déclaré par la personne qui ouvre la page.
+   *
+   * Sur un poste, ces réglages viennent de l'environnement du serveur : ouvrir
+   * une sortie réseau depuis un système d'habilitations est une décision
+   * d'infrastructure. Dans une page, l'infrastructure, c'est la personne qui
+   * l'ouvre. Elle déclare l'adresse et le modèle ; le produit se comporte
+   * ensuite **exactement** comme si un fichier d'environnement les portait —
+   * même matrice d'assistance, mêmes catégories, mêmes attestations.
+   *
+   * Sans déclaration, il n'y a pas de modèle : c'est le défaut du produit, et
+   * la page le conserve.
+   *
+   * La clé, elle, ne va pas dans le stockage durable. Une clé déposée là
+   * survit à la fermeture de l'onglet et se lit depuis l'origine de la page :
+   * elle reste en mémoire, et au plus dans le stockage de session si la
+   * personne le demande pour cet onglet. L'adresse et le modèle, qui ne sont
+   * pas des secrets, sont retenus pour ne pas être ressaisis.
+   */
+  const CLE_ADRESSE = "kovex_modele_adresse";
+  const CLE_SESSION = "kovex_modele_cle";
 
-    return new Response(rendu.corps, {
-      status: rendu.statut,
-      headers: rendu.entetes,
-    });
+  let declaration = null;
+
+  function lireLaDeclarationRetenue() {
+    try {
+      const garde = JSON.parse(localStorage.getItem(CLE_ADRESSE) || "null");
+      if (!garde) return null;
+      const cle = sessionStorage.getItem(CLE_SESSION) || "";
+      return Object.assign({}, garde, cle ? { cle: cle } : {});
+    } catch (erreur) {
+      return null;
+    }
+  }
+
+  async function appliquerLaDeclaration() {
+    if (!declarerAuMoteur) return null;
+    const posee = declaration || lireLaDeclarationRetenue();
+    return JSON.parse(await declarerAuMoteur(posee ? JSON.stringify(posee) : ""));
+  }
+
+  window.KovexModele = {
+    /**
+     * Déclare — ou retire — le moteur de modèle.
+     *
+     * `conserver: "onglet"` garde la clé dans le stockage de session, le temps
+     * de l'onglet. Tout autre valeur la laisse en mémoire seule.
+     */
+    async declarer(reglages) {
+      declaration = reglages && reglages.adresse
+        ? { adresse: String(reglages.adresse).replace(/\/+$/, ""),
+            modele: String(reglages.modele || ""),
+            cle: String(reglages.cle || ""),
+            delai: reglages.delai ? String(reglages.delai) : "" }
+        : null;
+      try {
+        if (declaration) {
+          localStorage.setItem(CLE_ADRESSE, JSON.stringify({
+            adresse: declaration.adresse, modele: declaration.modele,
+            delai: declaration.delai }));
+          if (declaration.cle && reglages.conserver === "onglet") {
+            sessionStorage.setItem(CLE_SESSION, declaration.cle);
+          } else {
+            sessionStorage.removeItem(CLE_SESSION);
+          }
+        } else {
+          localStorage.removeItem(CLE_ADRESSE);
+          sessionStorage.removeItem(CLE_SESSION);
+        }
+      } catch (erreur) {
+        // Un navigateur qui refuse le stockage n'empêche pas de déclarer : la
+        // déclaration tient en mémoire pour la durée de la page.
+      }
+      if (!pretDuMoteur) pretDuMoteur = demarrer();
+      await pretDuMoteur;
+      return appliquerLaDeclaration();
+    },
+
+    /** Ce que le moteur porte : jamais la clé, seulement qu'elle est posée. */
+    async etat() {
+      if (!pretDuMoteur) return { adresse: "", modele: "", cle_posee: false };
+      await pretDuMoteur;
+      return appliquerLaDeclaration();
+    },
+
+    /** Retire la déclaration, de la mémoire comme du stockage. */
+    async oublier() {
+      return window.KovexModele.declarer(null);
+    },
   };
 
   /**

@@ -2338,6 +2338,68 @@
                                     <div id="perimeter-excluded"></div>
                                 </div>
                             </div>
+                            <!-- Moteur de modele. Sur un poste, ces reglages viennent
+                                 de l'environnement du serveur : ouvrir une sortie reseau
+                                 depuis un systeme d'habilitations est une decision
+                                 d'infrastructure, pas un reglage applicatif. La carte ne
+                                 s'affiche donc que la ou l'execution peut accepter une
+                                 declaration — une page autonome, ou l'infrastructure,
+                                 c'est la personne qui l'ouvre. Ailleurs, elle reste
+                                 masquee et l'environnement seul decide. -->
+                            <div class="settings-section card" id="modele-local" hidden>
+                                <div class="card-header">
+                                    <h2 class="card-title">
+                                        <i class="fas fa-plug" aria-hidden="true"></i>
+                                        <span data-i18n-key="modele.title"></span>
+                                    </h2>
+                                </div>
+                                <div class="card-body">
+                                    <p class="form-hint" data-i18n-key="modele.description"></p>
+                                    <p class="form-hint" data-i18n-key="modele.origine_hint"></p>
+                                    <p id="modele-etat" class="form-hint" role="status"></p>
+                                    <div class="form-group">
+                                        <label for="modele-adresse" class="form-label"
+                                               data-i18n-key="modele.adresse"></label>
+                                        <input type="url" id="modele-adresse" class="form-input"
+                                               autocomplete="off"
+                                               data-i18n-placeholder="modele.adresse_exemple">
+                                        <span class="form-hint" data-i18n-key="modele.adresse_hint"></span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="modele-nom" class="form-label"
+                                               data-i18n-key="modele.nom"></label>
+                                        <input type="text" id="modele-nom" class="form-input"
+                                               autocomplete="off">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="modele-cle" class="form-label"
+                                               data-i18n-key="modele.cle"></label>
+                                        <input type="password" id="modele-cle" class="form-input"
+                                               autocomplete="off">
+                                        <span class="form-hint" data-i18n-key="modele.cle_hint"></span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-check">
+                                            <input type="checkbox" id="modele-conserver">
+                                            <span data-i18n-key="modele.conserver"></span>
+                                        </label>
+                                        <span class="form-hint" data-i18n-key="modele.conserver_hint"></span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="modele-delai" class="form-label"
+                                               data-i18n-key="modele.delai"></label>
+                                        <input type="number" id="modele-delai" class="form-input"
+                                               min="1" max="600">
+                                    </div>
+                                    <div class="form-actions">
+                                        <button class="btn btn-primary" id="modele-declarer"
+                                                data-i18n-key="modele.declarer"></button>
+                                        <button class="btn btn-secondary" id="modele-oublier"
+                                                data-i18n-key="modele.oublier"></button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Assistance par modele. L'endroit qui dit tout : un
                                  administrateur doit pouvoir repondre a « qu'est-ce qui
                                  peut sortir d'ici, et pour quoi faire » sur un seul
@@ -3540,7 +3602,7 @@
         <!-- Le pont se pose AVANT tout script du produit : l interface ne doit jamais voir le fetch d origine. -->
     <script src="moteur/pyodide.js"></script>
     <script src="moteur/pont.js"></script>
-    <script src="vendor/chartjs/chart.umd.js?v=4.4.0"></script>
+        <script src="vendor/chartjs/chart.umd.js?v=4.4.0"></script>
         <script src="js/config.js?v=4.4.0"></script>
         <script src="js/utils.js?v=4.4.0"></script>
         <script src="js/auth.js?v=4.4.0"></script>

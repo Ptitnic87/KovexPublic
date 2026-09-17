@@ -59,6 +59,18 @@ const SettingsPage = {
     },
 
     bindEvents() {
+        // Le moteur de modèle : les boutons n'existent que là où l'exécution
+        // peut accepter une déclaration. Ailleurs, la carte reste masquée et
+        // ces deux recherches ne trouvent rien.
+        const declarer = document.getElementById('modele-declarer');
+        if (declarer) {
+            declarer.addEventListener('click', () => this.declarerLeModele());
+        }
+        const oublier = document.getElementById('modele-oublier');
+        if (oublier) {
+            oublier.addEventListener('click', () => this.oublierLeModele());
+        }
+
         const saveBtn = document.getElementById('save-settings');
         if (saveBtn) {
             saveBtn.addEventListener('click', () => this.saveSettings());
@@ -1165,6 +1177,98 @@ const SettingsPage = {
      * Un rechargement demandé *après* la fin du précédent repart, lui :
      * revenir sur l'écran doit bien relire ce qu'un autre poste a pu changer.
      */
+    /** L'exécution accepte-t-elle qu'on lui déclare un moteur de modèle ? */
+    executionDeclarable() {
+        return typeof window !== 'undefined' && Boolean(window.KovexModele);
+    },
+
+    /**
+     * Le moteur de modèle, quand c'est la personne qui l'ouvre qui le déclare.
+     *
+     * Sur un poste, ces réglages viennent de l'environnement du serveur, et
+     * cette carte reste masquée : un écran qui proposerait de les changer
+     * mentirait sur qui décide. Dans une page autonome, il n'y a pas
+     * d'environnement de serveur — l'infrastructure, c'est la personne devant
+     * l'écran, et c'est ici qu'elle déclare.
+     *
+     * Ce que la déclaration change s'arrête là : la matrice d'assistance, les
+     * catégories qui peuvent sortir et les attestations de la piste d'audit
+     * sont celles du produit, et elles ne se déclarent pas ici.
+     */
+    async chargerLeModeleLocal() {
+        const carte = document.getElementById('modele-local');
+        if (!carte || !this.executionDeclarable()) return;
+        carte.hidden = false;
+        try {
+            this.renderLEtatDuModele(await window.KovexModele.etat());
+        } catch (erreur) {
+            this.renderLEtatDuModele(null);
+        }
+    },
+
+    /** Ce que le moteur porte : l'adresse, le modèle, et que la clé est posée. */
+    renderLEtatDuModele(etat) {
+        const ligne = document.getElementById('modele-etat');
+        if (!ligne) return;
+        if (!etat || !etat.adresse || !etat.modele) {
+            ligne.textContent = I18n.t('modele.etat_aucun');
+            return;
+        }
+        ligne.textContent = I18n.t(etat.cle_posee ? 'modele.etat_avec_cle'
+                                                  : 'modele.etat_sans_cle',
+                                   {modele: etat.modele, adresse: etat.adresse});
+        const adresse = document.getElementById('modele-adresse');
+        const nom = document.getElementById('modele-nom');
+        if (adresse && !adresse.value) adresse.value = etat.adresse;
+        if (nom && !nom.value) nom.value = etat.modele;
+    },
+
+    async declarerLeModele() {
+        if (!this.executionDeclarable()) return;
+        const adresse = (document.getElementById('modele-adresse').value || '').trim();
+        const modele = (document.getElementById('modele-nom').value || '').trim();
+        // Les deux ensemble ou rien : une adresse sans modèle ne désigne aucun
+        // interlocuteur, et le produit considérerait l'assistance éteinte sans
+        // dire pourquoi.
+        if (!adresse || !modele) {
+            Toast.error(I18n.t('common.error'), I18n.t('modele.adresse_requise'));
+            return;
+        }
+        const conserver = document.getElementById('modele-conserver');
+        const delai = (document.getElementById('modele-delai').value || '').trim();
+        try {
+            const etat = await window.KovexModele.declarer({
+                adresse,
+                modele,
+                cle: document.getElementById('modele-cle').value || '',
+                delai,
+                conserver: conserver && conserver.checked ? 'onglet' : 'non',
+            });
+            // La clé n'est pas laissée dans le champ : elle est posée, l'état
+            // le dit, et un champ rempli invite à la relire.
+            document.getElementById('modele-cle').value = '';
+            this.renderLEtatDuModele(etat);
+            Toast.success(I18n.t('modele.declare'), I18n.t('modele.declare_detail'));
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+        }
+    },
+
+    async oublierLeModele() {
+        if (!this.executionDeclarable()) return;
+        try {
+            const etat = await window.KovexModele.oublier();
+            ['modele-adresse', 'modele-nom', 'modele-cle'].forEach((champ) => {
+                const element = document.getElementById(champ);
+                if (element) element.value = '';
+            });
+            this.renderLEtatDuModele(etat);
+            Toast.success(I18n.t('modele.oublie'), I18n.t('modele.oublie_detail'));
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+        }
+    },
+
     loadSettings() {
         if (this.chargementEnCours) return this.chargementEnCours;
         this.chargementEnCours = this.chargerLesReglages()
@@ -1196,6 +1300,9 @@ const SettingsPage = {
         // reconnaît à ce qu'elle produit sur **ce** référentiel, pas à ce
         // qu'elle dit.
         await this.chargerLeDecoupage();
+        // Le moteur de modèle : lu en dernier, parce qu'il ne vient pas du
+        // serveur mais de l'exécution elle-même.
+        await this.chargerLeModeleLocal();
     },
 
     populateForm(config) {

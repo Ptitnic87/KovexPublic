@@ -424,9 +424,27 @@ const MiningPage = {
             </div>`;
     },
 
+    /**
+     * Rappelle ce qui est déjà validé, et se taise quand il ne sait pas.
+     *
+     * `KnowledgeBase.getStats()` rattrape tout et rend `null` : avant qu'un
+     * espace de travail ne soit actif, la base répond 409. Lire
+     * `null.validated_app_roles` jetait alors, l'écran affichait « Cannot read
+     * properties of null » à la place de l'information, et l'exception coupait
+     * le reste du chargement — le bandeau ne revenait plus, même une fois les
+     * données chargées.
+     *
+     * Une base qu'on n'a pas su lire n'est pas une base sans rôle validé : on
+     * n'affiche rien plutôt que d'affirmer zéro.
+     */
     showValidatedRolesInfo(stats) {
         const container = document.getElementById('mining-validated-info');
         if (!container) return;
+
+        if (!stats) {
+            container.innerHTML = '';
+            return;
+        }
 
         const applicatifs = stats.validated_app_roles || 0;
         const metiers = stats.validated_business_roles || 0;

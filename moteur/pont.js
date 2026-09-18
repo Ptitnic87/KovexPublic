@@ -16,6 +16,37 @@
 
   const RACINE = "./moteur/";
 
+  /**
+   * L'empreinte du moteur, lue sur la balise qui charge ce fichier.
+   *
+   * Sans elle, un navigateur qui a déjà ouvert la page garde les archives en
+   * cache : il peut alors exécuter **une archive périmée avec un pont neuf**,
+   * ou l'inverse — un mélange que personne n'a testé. La construction pose
+   * `?v=<empreinte>` sur la balise ; on la reporte sur tout ce que le moteur
+   * charge, pour que le cache ne réponde plus à la place d'un fichier changé.
+   *
+   * Absente — un poste qui sert la page à la main — on charge sans marque,
+   * comme avant.
+   */
+  const EMPREINTE = (function () {
+    const balise = (typeof document !== "undefined" && document.currentScript)
+      ? String(document.currentScript.src || "") : "";
+    const trouve = /[?&]v=([A-Za-z0-9._-]+)/.exec(balise);
+    return trouve ? trouve[1] : "";
+  })();
+
+  /**
+   * L'adresse d'un fichier du moteur, marquée par l'empreinte.
+   *
+   * Elle ne sert qu'aux fichiers dont **le nom ne change jamais** : l'archive
+   * du code. Les roues portent leur version dans leur nom, donc un changement
+   * change déjà leur adresse — et Pyodide déduit le nom du paquet du nom du
+   * fichier, qu'une chaîne de requête lui rendrait illisible.
+   */
+  function adresseDuMoteur(nom) {
+    return RACINE + nom + (EMPREINTE ? "?v=" + EMPREINTE : "");
+  }
+
   const ROUES = [
     "numpy-2.4.6-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
     "scipy-1.18.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
@@ -418,6 +449,10 @@ async def _appeler(methode, chemin, charge, entetes_json):
     const pyodide = await loadPyodide({ indexURL: RACINE });
 
     annoncer("bibliotheques", 25);
+    // Sans marque d'empreinte : Pyodide déduit le nom du paquet de celui du
+    // fichier, et une chaîne de requête le lui rend illisible. Ces archives
+    // portent déjà leur version dans leur nom — un changement change
+    // l'adresse, donc le cache ne peut pas les confondre.
     await pyodide.loadPackage(ROUES.map((nom) => RACINE + nom));
 
     for (const nom of ROUES_DEPOSEES) {
@@ -428,7 +463,7 @@ async def _appeler(methode, chemin, charge, entetes_json):
 
     annoncer("produit", 70);
     const source = new Uint8Array(
-      await (await fetch(RACINE + "kovex-src.zip")).arrayBuffer());
+      await (await fetch(adresseDuMoteur("kovex-src.zip"))).arrayBuffer());
     pyodide.unpackArchive(source, "zip", { extractDir: "/kovex" });
 
     await monterLeDisque(pyodide);

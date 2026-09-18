@@ -50,6 +50,11 @@ const SettingsPage = {
     //  délimitent par colonne. Aucune n'est écrite ici.
     colonnesOuvrables: [],
 
+    //: Les points de terminaison, tels que le serveur les rend et tels que
+    //  l'écran les modifie avant enregistrement. Aucune clé n'y figure : le
+    //  serveur ne rend que le fait qu'un préréglage en ait une.
+    points: null,
+
     //: Dernière configuration lue. D'autres écrans s'en servent — le mining y
     //  trouve la liste des droits que le client considère comme sensibles.
     config: null,
@@ -180,6 +185,57 @@ const SettingsPage = {
                     evenement.preventDefault();
                     this.appliquerLesComptesAPrivileges();
                 }
+            });
+        }
+
+        // Les points de terminaison : saisie déléguée, parce que les blocs sont
+        // redessinés à chaque préréglage ajouté ou retiré.
+        const prereglages = document.getElementById('endpoints-presets');
+        if (prereglages) {
+            prereglages.addEventListener('input', (evenement) => {
+                const champ = evenement.target.closest('[data-endpoint-champ]');
+                if (!champ) return;
+                this.modifierLePrereglage(champ.dataset.endpointId,
+                                          champ.dataset.endpointChamp, champ.value);
+            });
+            prereglages.addEventListener('click', (evenement) => {
+                const bouton = evenement.target.closest('[data-endpoint-action]');
+                if (!bouton) return;
+                evenement.preventDefault();
+                this.actionDuPrereglage(bouton.dataset.endpointAction,
+                                        bouton.dataset.endpointId);
+            });
+        }
+
+        const usagesDesPoints = document.getElementById('endpoints-uses');
+        if (usagesDesPoints) {
+            usagesDesPoints.addEventListener('change', (evenement) => {
+                const choix = evenement.target.closest('[data-endpoint-usage]');
+                if (!choix) return;
+                this.choisirLePointDeLUsage(choix.dataset.endpointUsage, choix.value);
+            });
+        }
+
+        const commun = document.getElementById('endpoints-common');
+        if (commun) {
+            commun.addEventListener('change', () => {
+                if (this.points) this.points.commun = commun.value;
+            });
+        }
+
+        const ajouter = document.getElementById('endpoints-add-preset');
+        if (ajouter) {
+            ajouter.addEventListener('click', (evenement) => {
+                evenement.preventDefault();
+                this.ajouterUnPrereglage();
+            });
+        }
+
+        const enregistrer = document.getElementById('endpoints-save');
+        if (enregistrer) {
+            enregistrer.addEventListener('click', (evenement) => {
+                evenement.preventDefault();
+                this.enregistrerLesPointsDeTerminaison();
             });
         }
 
@@ -410,6 +466,334 @@ const SettingsPage = {
             this.rapportPerimetre = null;
         }
         this.renderPerimetre();
+    },
+
+    /** Un identifiant interne, stable : ce que l'utilisateur nomme est le libellé. */
+    identifiantLibre() {
+        const pris = new Set(((this.points && this.points.prereglages) || [])
+            .map((prereglage) => prereglage.identifiant));
+        let rang = 1;
+        while (pris.has(`p${rang}`)) rang += 1;
+        return `p${rang}`;
+    },
+
+    ajouterUnPrereglage() {
+        if (!this.points) return;
+        this.points.prereglages = (this.points.prereglages || []).concat([{
+            identifiant: this.identifiantLibre(), libelle: '', adresse: '',
+            modele: '', locale: false, cle_posee: false }]);
+        this.renderPointsDeTerminaison();
+    },
+
+    modifierLePrereglage(identifiant, champ, valeur) {
+        const prereglage = ((this.points && this.points.prereglages) || [])
+            .find((candidat) => candidat.identifiant === identifiant);
+        if (!prereglage) return;
+        prereglage[champ] = valeur;
+    },
+
+    choisirLePointDeLUsage(code, prereglage) {
+        const usage = ((this.points && this.points.usages) || [])
+            .find((candidat) => candidat.code === code);
+        if (!usage) return;
+        usage.prereglage = prereglage;
+        usage.propre = Boolean(prereglage);
+    },
+
+    /**
+     * Les gestes d'un préréglage. Le retrait d'une clé et la suppression
+     * touchent le serveur ; le reste attend l'enregistrement.
+     */
+    async actionDuPrereglage(action, identifiant) {
+        if (action === 'supprimer') {
+            this.points.prereglages = (this.points.prereglages || [])
+                .filter((prereglage) => prereglage.identifiant !== identifiant);
+            (this.points.usages || []).forEach((usage) => {
+                if (usage.prereglage === identifiant) {
+                    usage.prereglage = '';
+                    usage.propre = false;
+                }
+            });
+            this.renderPointsDeTerminaison();
+            return;
+        }
+        if (action === 'poser-cle') {
+            const champ = document.querySelector(
+                `[data-endpoint-cle="${identifiant}"]`);
+            const cle = champ ? champ.value : '';
+            if (!cle) {
+                Toast.error(I18n.t('common.error'), I18n.t('endpoints.key_empty'));
+                return;
+            }
+            try {
+                this.points = await API.poserLaCle(identifiant, cle);
+                if (champ) champ.value = '';
+                Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_saved'));
+            } catch (erreur) {
+                Toast.error(I18n.t('common.error'), erreur.message);
+            }
+            this.renderPointsDeTerminaison();
+            return;
+        }
+        if (action === 'retirer-cle') {
+            try {
+                this.points = await API.retirerLaCle(identifiant);
+                Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_cleared'));
+            } catch (erreur) {
+                Toast.error(I18n.t('common.error'), erreur.message);
+            }
+            this.renderPointsDeTerminaison();
+            return;
+        }
+        if (action === 'modeles') {
+            try {
+                const rendu = await API.listerLesModeles(identifiant);
+                const liste = document.getElementById(`endpoint-models-${identifiant}`);
+                if (liste) {
+                    liste.innerHTML = (rendu.modeles || []).map(
+                        (nom) => `<option value="${Utils.escapeHtml(nom)}"></option>`).join('');
+                }
+                Toast.success(I18n.t('common.success'), I18n.t(
+                    'endpoints.models_loaded', { nombre: (rendu.modeles || []).length }));
+            } catch (erreur) {
+                Toast.error(I18n.t('common.error'), erreur.message);
+            }
+            return;
+        }
+        if (action === 'essai') {
+            try {
+                const rendu = await API.essayerLePointDeTerminaison(identifiant);
+                Toast.success(I18n.t('common.success'), I18n.t(
+                    'endpoints.trial_ok', { millisecondes: rendu.millisecondes }));
+            } catch (erreur) {
+                Toast.error(I18n.t('common.error'), erreur.message);
+            }
+        }
+    },
+
+    /**
+     * Enregistre les préréglages et les surcharges.
+     *
+     * Le réglage commun est celui du premier usage qui n'a pas de choix propre :
+     * il n'existe pas d'écran séparé pour lui, parce qu'un réglage « commun »
+     * qu'on ne verrait nulle part dans la liste des usages serait un réglage
+     * qu'on oublie.
+     */
+    async enregistrerLesPointsDeTerminaison() {
+        if (!this.points) return;
+        const usages = {};
+        (this.points.usages || []).forEach((usage) => {
+            if (usage.prereglage && usage.propre) {
+                usages[usage.code] = { prereglage: usage.prereglage };
+            }
+        });
+        const charge = {
+            prereglages: (this.points.prereglages || []).map((prereglage) => ({
+                identifiant: prereglage.identifiant,
+                libelle: prereglage.libelle || '',
+                adresse: prereglage.adresse || '',
+                modele: prereglage.modele || '' })),
+            commun: { prereglage: this.points.commun || '' },
+            usages,
+        };
+        try {
+            this.points = await API.savePointsDeTerminaison(charge);
+            Toast.success(I18n.t('common.success'), I18n.t('endpoints.saved'));
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+        }
+        this.renderPointsDeTerminaison();
+    },
+
+    /**
+     * Où part chaque question : les préréglages, le réglage commun, les
+     * surcharges par usage.
+     *
+     * Un échec de lecture ne vide pas la section en silence : une liste vide
+     * se lirait comme « rien n'est configuré », ce qui n'est pas la même
+     * chose que « je n'ai pas pu lire ».
+     */
+    async chargerLesPointsDeTerminaison() {
+        try {
+            this.points = await API.getPointsDeTerminaison();
+        } catch (erreur) {
+            this.points = null;
+        }
+        this.renderPointsDeTerminaison();
+    },
+
+    renderPointsDeTerminaison() {
+        const prereglages = document.getElementById('endpoints-presets');
+        const usages = document.getElementById('endpoints-uses');
+        if (!prereglages || !usages) return;
+
+        const volatiles = document.getElementById('endpoints-volatile');
+        if (volatiles) volatiles.hidden = !(this.points && this.points.cles_volatiles);
+
+        if (!this.points) {
+            prereglages.innerHTML = `<p class="form-hint">${
+                Utils.escapeHtml(I18n.t('endpoints.unreadable'))}</p>`;
+            usages.innerHTML = '';
+            this.renderAvertissementsDesPoints([]);
+            return;
+        }
+
+        this.renderChoixCommun();
+        const liste = this.points.prereglages || [];
+        prereglages.innerHTML = liste.length
+            ? liste.map((prereglage) => this.blocPrereglage(prereglage)).join('')
+            : `<p class="form-hint">${Utils.escapeHtml(
+                I18n.t('endpoints.no_preset'))}</p>`;
+        usages.innerHTML = (this.points.usages || [])
+            .map((usage) => this.blocUsageDuPoint(usage)).join('');
+        this.renderAvertissementsDesPoints(this.points.avertissements || []);
+    },
+
+    /**
+     * Le point de terminaison que prennent tous les usages qui n'en ont pas
+     * choisi d'autre. Sans lui, la liste des surcharges n'aurait rien à
+     * surcharger.
+     */
+    renderChoixCommun() {
+        const choix = document.getElementById('endpoints-common');
+        if (!choix || !this.points) return;
+        const options = [`<option value="">${Utils.escapeHtml(
+            I18n.t('endpoints.none'))}</option>`]
+            .concat((this.points.prereglages || []).map((prereglage) => {
+                const valeur = Utils.escapeHtml(prereglage.identifiant);
+                const retenu = this.points.commun === prereglage.identifiant;
+                return `<option value="${valeur}"${retenu ? ' selected' : ''}>${
+                    Utils.escapeHtml(prereglage.libelle || prereglage.identifiant)}</option>`;
+            }));
+        choix.innerHTML = options.join('');
+    },
+
+    /**
+     * Un préréglage : ce qu'il vise, s'il reste sur la machine, et sa clé.
+     *
+     * L'adresse est rendue telle que l'utilisateur l'a écrite — il ne pourrait
+     * pas la corriger autrement. La clé, elle, n'est jamais rendue : le champ
+     * est en écriture seule et l'écran n'affiche que le fait qu'elle est posée.
+     */
+    blocPrereglage(prereglage) {
+        const id = Utils.escapeHtml(prereglage.identifiant);
+        const distant = !prereglage.locale;
+        const trajet = I18n.t(prereglage.locale ? 'endpoints.stays_local'
+                                                : 'endpoints.leaves_machine');
+        return `
+            <div class="file-config" data-endpoint-preset="${id}">
+                <h3 class="file-config-title">
+                    <i class="fas fa-server" aria-hidden="true"></i>
+                    <span>${Utils.escapeHtml(prereglage.libelle || prereglage.identifiant)}</span>
+                </h3>
+                <div class="form-row">
+                    <label class="form-label" for="endpoint-label-${id}"
+                           data-i18n-key="endpoints.preset_label"></label>
+                    <input type="text" class="form-input" id="endpoint-label-${id}"
+                           data-endpoint-champ="libelle" data-endpoint-id="${id}"
+                           value="${Utils.escapeHtml(prereglage.libelle || '')}">
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="endpoint-address-${id}"
+                           data-i18n-key="endpoints.address"></label>
+                    <input type="url" class="form-input" id="endpoint-address-${id}"
+                           data-endpoint-champ="adresse" data-endpoint-id="${id}"
+                           value="${Utils.escapeHtml(prereglage.adresse || '')}">
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="endpoint-model-${id}"
+                           data-i18n-key="endpoints.model"></label>
+                    <input type="text" class="form-input" id="endpoint-model-${id}"
+                           list="endpoint-models-${id}"
+                           data-endpoint-champ="modele" data-endpoint-id="${id}"
+                           value="${Utils.escapeHtml(prereglage.modele || '')}">
+                    <datalist id="endpoint-models-${id}"></datalist>
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="endpoint-key-${id}"
+                           data-i18n-key="endpoints.key"></label>
+                    <input type="password" class="form-input" id="endpoint-key-${id}"
+                           autocomplete="off" data-endpoint-cle="${id}"
+                           placeholder="${Utils.escapeHtml(I18n.t(
+                               prereglage.cle_posee ? 'endpoints.key_set'
+                                                    : 'endpoints.key_unset'))}">
+                </div>
+                <div class="${distant ? 'alert alert-warning' : 'form-hint'}">${
+                    Utils.escapeHtml(trajet)}</div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-endpoint-action="modeles" data-endpoint-id="${id}">
+                        <i class="fas fa-rotate" aria-hidden="true"></i>
+                        <span data-i18n-key="endpoints.load_models"></span>
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-endpoint-action="essai" data-endpoint-id="${id}">
+                        <i class="fas fa-plug-circle-check" aria-hidden="true"></i>
+                        <span data-i18n-key="endpoints.trial"></span>
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-endpoint-action="poser-cle" data-endpoint-id="${id}">
+                        <i class="fas fa-key" aria-hidden="true"></i>
+                        <span data-i18n-key="endpoints.set_key"></span>
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-endpoint-action="retirer-cle" data-endpoint-id="${id}"
+                            ${prereglage.cle_posee ? '' : 'disabled'}>
+                        <i class="fas fa-key" aria-hidden="true"></i>
+                        <span data-i18n-key="endpoints.clear_key"></span>
+                    </button>
+                    <button type="button" class="btn btn-danger btn-sm"
+                            data-endpoint-action="supprimer" data-endpoint-id="${id}">
+                        <i class="fas fa-trash" aria-hidden="true"></i>
+                        <span data-i18n-key="endpoints.remove_preset"></span>
+                    </button>
+                </div>
+            </div>`;
+    },
+
+    /**
+     * Un usage : d'où vient son réglage, et ce qu'on peut y changer.
+     *
+     * Un usage imposé par l'installation n'offre pas de choix : le montrer
+     * modifiable ferait croire à un réglage qui ne prendrait jamais effet.
+     */
+    blocUsageDuPoint(usage) {
+        const code = Utils.escapeHtml(usage.code);
+        const impose = usage.origine === 'environnement';
+        const options = [`<option value="">${Utils.escapeHtml(
+            I18n.t('endpoints.use_common'))}</option>`]
+            .concat((this.points.prereglages || []).map((prereglage) => {
+                const valeur = Utils.escapeHtml(prereglage.identifiant);
+                const choisi = usage.propre && usage.prereglage === prereglage.identifiant;
+                return `<option value="${valeur}"${choisi ? ' selected' : ''}>${
+                    Utils.escapeHtml(prereglage.libelle || prereglage.identifiant)}</option>`;
+            })).join('');
+        return `
+            <div class="file-config" data-endpoint-use="${code}">
+                <h3 class="file-config-title">
+                    <i class="fas fa-diagram-project" aria-hidden="true"></i>
+                    <span>${Utils.escapeHtml(I18n.t(`assistance.usage.${usage.code}`))}</span>
+                </h3>
+                <div class="form-hint">${Utils.escapeHtml(
+                    I18n.t(`endpoints.origin.${usage.origine}`, {
+                        hote: usage.hote, modele: usage.modele }))}</div>
+                <div class="form-row">
+                    <label class="form-label" for="endpoint-use-${code}"
+                           data-i18n-key="endpoints.use_preset"></label>
+                    <select class="form-select" id="endpoint-use-${code}"
+                            data-endpoint-usage="${code}"${impose ? ' disabled' : ''}>
+                        ${options}
+                    </select>
+                </div>
+            </div>`;
+    },
+
+    renderAvertissementsDesPoints(avertissements) {
+        const conteneur = document.getElementById('endpoints-warnings');
+        if (!conteneur) return;
+        conteneur.innerHTML = (avertissements || []).map((avis) => `
+            <div class="alert alert-warning">${Utils.escapeHtml(
+                I18n.t(avis.code, avis.params || {}))}</div>`).join('');
     },
 
     /**
@@ -1291,6 +1675,7 @@ const SettingsPage = {
         await this.chargerPerimetre();
         await this.chargerExclusions();
         await this.chargerAssistance();
+        await this.chargerLesPointsDeTerminaison();
         // Le dénombrement des comptes marqués : il ne se déduit pas de la
         // configuration, il se calcule sur les identités chargées. Deux
         // workspaces portant la même liste n'y marquent pas le même nombre de

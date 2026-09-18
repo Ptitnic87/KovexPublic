@@ -2406,6 +2406,55 @@
                                  ecran, sans parcourir le produit. Un usage ferme y
                                  figure aussi : une fonction invisible passe pour une
                                  fonction manquante. -->
+                            <!-- Ou part chaque question. Le reglage vivait dans
+                                 l'environnement du serveur : sur un poste c'est la
+                                 bonne regle, dans la page il n'y a pas
+                                 d'environnement, et les sept usages y etaient
+                                 injoignables. Ce qui est pose dans l'environnement
+                                 le reste, et l'ecran le dit au lieu de laisser
+                                 croire qu'on peut le changer ici. -->
+                            <div class="settings-section card">
+                                <div class="card-header">
+                                    <h2 class="card-title">
+                                        <i class="fas fa-plug" aria-hidden="true"></i>
+                                        <span data-i18n-key="endpoints.title"></span>
+                                    </h2>
+                                </div>
+                                <div class="card-body">
+                                    <p class="form-hint" data-i18n-key="endpoints.description"></p>
+                                    <div id="endpoints-volatile" class="alert alert-warning"
+                                         hidden data-i18n-key="endpoints.keys_volatile"></div>
+                                    <div id="endpoints-presets" role="group"
+                                         data-i18n-aria-label="endpoints.presets_title"></div>
+                                    <div class="form-actions">
+                                        <button type="button" class="btn btn-secondary"
+                                                id="endpoints-add-preset">
+                                            <i class="fas fa-plus" aria-hidden="true"></i>
+                                            <span data-i18n-key="endpoints.add_preset"></span>
+                                        </button>
+                                    </div>
+                                    <h3 class="file-config-title">
+                                        <i class="fas fa-sliders" aria-hidden="true"></i>
+                                        <span data-i18n-key="endpoints.uses_title"></span>
+                                    </h3>
+                                    <p class="form-hint" data-i18n-key="endpoints.uses_description"></p>
+                                    <div class="form-row">
+                                        <label class="form-label" for="endpoints-common"
+                                               data-i18n-key="endpoints.common"></label>
+                                        <select class="form-select" id="endpoints-common"></select>
+                                    </div>
+                                    <div id="endpoints-uses" role="group"
+                                         data-i18n-aria-label="endpoints.uses_title"></div>
+                                    <div id="endpoints-warnings"></div>
+                                    <div class="form-actions">
+                                        <button type="button" class="btn btn-primary"
+                                                id="endpoints-save">
+                                            <i class="fas fa-floppy-disk" aria-hidden="true"></i>
+                                            <span data-i18n-key="endpoints.save"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="settings-section card">
                                 <div class="card-header">
                                     <h2 class="card-title">
@@ -3600,8 +3649,8 @@
         <div class="toast-container" id="toast-container" role="status"
              aria-live="polite" aria-relevant="additions"></div>
         <!-- Le pont se pose AVANT tout script du produit : l interface ne doit jamais voir le fetch d origine. -->
-    <script src="moteur/pyodide.js?v=87deb8993afb"></script>
-    <script src="moteur/pont.js?v=87deb8993afb"></script>
+    <script src="moteur/pyodide.js?v=950d2030ccbe"></script>
+    <script src="moteur/pont.js?v=950d2030ccbe"></script>
         <script src="vendor/chartjs/chart.umd.js?v=4.4.0"></script>
         <script src="js/config.js?v=4.4.0"></script>
         <script src="js/utils.js?v=4.4.0"></script>

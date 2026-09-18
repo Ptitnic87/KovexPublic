@@ -391,6 +391,53 @@ const API = {
         return this.client.put('/assistance/', payload);
     },
 
+    /**
+     * Les points de terminaison configurés, et qui les a décidés.
+     *
+     * La réponse ne porte aucune clé : seulement le fait qu'un préréglage en
+     * ait une. Une interface qui recevrait un secret le donnerait à tout ce
+     * qui sait ouvrir les outils de développement.
+     */
+    async getPointsDeTerminaison() {
+        return this.client.get('/points-de-terminaison/');
+    },
+
+    /** Réécrit les préréglages, le réglage commun et les surcharges par usage. */
+    async savePointsDeTerminaison(payload) {
+        return this.client.put('/points-de-terminaison/', payload);
+    },
+
+    /** Pose la clé d'un préréglage. Elle ne revient jamais ensuite. */
+    async poserLaCle(prereglage, cle) {
+        return this.client.put(
+            `/points-de-terminaison/prereglages/${encodeURIComponent(prereglage)}/cle`,
+            { cle });
+    },
+
+    /** Retire la clé d'un préréglage. */
+    async retirerLaCle(prereglage) {
+        return this.client.delete(
+            `/points-de-terminaison/prereglages/${encodeURIComponent(prereglage)}/cle`);
+    },
+
+    /**
+     * Les modèles que ce point de terminaison déclare servir.
+     *
+     * Lire la liste chez le fournisseur supprime une classe entière de fautes :
+     * un nom saisi à la main ne se trompe qu'une fois, mais il se trompe en
+     * silence — l'appel échoue plus tard, dans un écran qui parle d'autre chose.
+     */
+    async listerLesModeles(prereglage) {
+        return this.client.get(
+            `/points-de-terminaison/prereglages/${encodeURIComponent(prereglage)}/modeles`);
+    },
+
+    /** Un vrai aller-retour, et ce qu'il a coûté en temps. */
+    async essayerLePointDeTerminaison(prereglage) {
+        return this.client.post(
+            `/points-de-terminaison/prereglages/${encodeURIComponent(prereglage)}/essai`, {});
+    },
+
     /** État de l'annotateur sémantique et de ce qu'il aurait le droit d'envoyer. */
     async getAnnotatorStatus() {
         return this.client.get('/mining/annotator');

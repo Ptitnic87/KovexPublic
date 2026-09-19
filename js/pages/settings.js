@@ -55,6 +55,14 @@ const SettingsPage = {
     //  serveur ne rend que le fait qu'un préréglage en ait une.
     points: null,
 
+    //: Ce que le **serveur** porte, à côté de ce que l'écran montre. Les
+    //  gestes qui l'interrogent — lire les modèles, poser une clé, essayer —
+    //  ne peuvent porter que sur un préréglage qu'il connaît, et tel qu'il le
+    //  connaît. Sans cette copie, l'écran proposait d'essayer un préréglage
+    //  qui n'existait que dans la page, et le serveur répondait « n'existe
+    //  pas » à quelqu'un qui venait de le saisir.
+    pointsEnregistres: [],
+
     //: Dernière configuration lue. D'autres écrans s'en servent — le mining y
     //  trouve la liste des droits que le client considère comme sensibles.
     config: null,
@@ -490,6 +498,28 @@ const SettingsPage = {
             .find((candidat) => candidat.identifiant === identifiant);
         if (!prereglage) return;
         prereglage[champ] = valeur;
+        this.rafraichirLesGestes(prereglage);
+    },
+
+    /**
+     * Rouvre ou referme les gestes serveur d'un préréglage, sans redessiner.
+     *
+     * Redessiner le bloc à chaque frappe ferait perdre le curseur : seuls
+     * l'état des boutons et la phrase qui l'explique changent.
+     */
+    rafraichirLesGestes(prereglage) {
+        const id = prereglage.identifiant;
+        const servable = this.prereglageEnregistre(prereglage);
+        ['modeles', 'essai', 'poser-cle'].forEach((action) => {
+            const bouton = document.querySelector(
+                `[data-endpoint-action="${action}"][data-endpoint-id="${id}"]`);
+            if (bouton) bouton.disabled = !servable;
+        });
+        const retrait = document.querySelector(
+            `[data-endpoint-action="retirer-cle"][data-endpoint-id="${id}"]`);
+        if (retrait) retrait.disabled = !(servable && prereglage.cle_posee);
+        const phrase = document.querySelector(`[data-endpoint-hint="${id}"]`);
+        if (phrase) phrase.hidden = servable;
     },
 
     choisirLePointDeLUsage(code, prereglage) {
@@ -526,7 +556,7 @@ const SettingsPage = {
                 return;
             }
             try {
-                this.points = await API.poserLaCle(identifiant, cle);
+                this.poserLesPoints(await API.poserLaCle(identifiant, cle));
                 if (champ) champ.value = '';
                 Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_saved'));
             } catch (erreur) {
@@ -537,7 +567,7 @@ const SettingsPage = {
         }
         if (action === 'retirer-cle') {
             try {
-                this.points = await API.retirerLaCle(identifiant);
+                this.poserLesPoints(await API.retirerLaCle(identifiant));
                 Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_cleared'));
             } catch (erreur) {
                 Toast.error(I18n.t('common.error'), erreur.message);
@@ -597,7 +627,7 @@ const SettingsPage = {
             usages,
         };
         try {
-            this.points = await API.savePointsDeTerminaison(charge);
+            this.poserLesPoints(await API.savePointsDeTerminaison(charge));
             Toast.success(I18n.t('common.success'), I18n.t('endpoints.saved'));
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
@@ -615,11 +645,38 @@ const SettingsPage = {
      */
     async chargerLesPointsDeTerminaison() {
         try {
-            this.points = await API.getPointsDeTerminaison();
+            this.poserLesPoints(await API.getPointsDeTerminaison());
         } catch (erreur) {
             this.points = null;
+            this.pointsEnregistres = [];
         }
         this.renderPointsDeTerminaison();
+    },
+
+    /** Range la réponse du serveur, et garde de quoi savoir ce qu'il porte. */
+    poserLesPoints(reponse) {
+        this.points = reponse;
+        this.pointsEnregistres = (reponse.prereglages || []).map(
+            (prereglage) => ({ identifiant: prereglage.identifiant,
+                               libelle: prereglage.libelle || '',
+                               adresse: prereglage.adresse || '',
+                               modele: prereglage.modele || '' }));
+    },
+
+    /**
+     * Le serveur porte-t-il ce préréglage, **tel qu'il est à l'écran** ?
+     *
+     * La question n'est pas seulement « existe-t-il » : essayer un préréglage
+     * dont on vient de changer l'adresse essaierait l'ancienne, et le rendu
+     * dirait le contraire de ce qui est affiché.
+     */
+    prereglageEnregistre(prereglage) {
+        const connu = (this.pointsEnregistres || []).find(
+            (candidat) => candidat.identifiant === prereglage.identifiant);
+        return Boolean(connu)
+            && connu.adresse === (prereglage.adresse || '')
+            && connu.modele === (prereglage.modele || '')
+            && connu.libelle === (prereglage.libelle || '');
     },
 
     renderPointsDeTerminaison() {
@@ -680,6 +737,15 @@ const SettingsPage = {
         const distant = !prereglage.locale;
         const trajet = I18n.t(prereglage.locale ? 'endpoints.stays_local'
                                                 : 'endpoints.leaves_machine');
+        // Les trois gestes qui interrogent le serveur ne peuvent porter que
+        // sur ce qu'il porte. Proposer un bouton qui ne peut pas aboutir est
+        // un défaut : il est grisé, et l'écran dit ce qu'il faut faire avant.
+        const servable = this.prereglageEnregistre(prereglage);
+        const bloque = servable ? '' : ' disabled';
+        const avertissement = `
+                <div class="form-hint" data-endpoint-hint="${id}"${
+                    servable ? ' hidden' : ''}>${Utils.escapeHtml(
+                    I18n.t('endpoints.save_first'))}</div>`;
         return `
             <div class="file-config" data-endpoint-preset="${id}">
                 <h3 class="file-config-title">
@@ -687,22 +753,22 @@ const SettingsPage = {
                     <span>${Utils.escapeHtml(prereglage.libelle || prereglage.identifiant)}</span>
                 </h3>
                 <div class="form-row">
-                    <label class="form-label" for="endpoint-label-${id}"
-                           data-i18n-key="endpoints.preset_label"></label>
+                    <label class="form-label" for="endpoint-label-${id}">${
+                        Utils.escapeHtml(I18n.t('endpoints.preset_label'))}</label>
                     <input type="text" class="form-input" id="endpoint-label-${id}"
                            data-endpoint-champ="libelle" data-endpoint-id="${id}"
                            value="${Utils.escapeHtml(prereglage.libelle || '')}">
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="endpoint-address-${id}"
-                           data-i18n-key="endpoints.address"></label>
+                    <label class="form-label" for="endpoint-address-${id}">${
+                        Utils.escapeHtml(I18n.t('endpoints.address'))}</label>
                     <input type="url" class="form-input" id="endpoint-address-${id}"
                            data-endpoint-champ="adresse" data-endpoint-id="${id}"
                            value="${Utils.escapeHtml(prereglage.adresse || '')}">
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="endpoint-model-${id}"
-                           data-i18n-key="endpoints.model"></label>
+                    <label class="form-label" for="endpoint-model-${id}">${
+                        Utils.escapeHtml(I18n.t('endpoints.model'))}</label>
                     <input type="text" class="form-input" id="endpoint-model-${id}"
                            list="endpoint-models-${id}"
                            data-endpoint-champ="modele" data-endpoint-id="${id}"
@@ -710,8 +776,8 @@ const SettingsPage = {
                     <datalist id="endpoint-models-${id}"></datalist>
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="endpoint-key-${id}"
-                           data-i18n-key="endpoints.key"></label>
+                    <label class="form-label" for="endpoint-key-${id}">${
+                        Utils.escapeHtml(I18n.t('endpoints.key'))}</label>
                     <input type="password" class="form-input" id="endpoint-key-${id}"
                            autocomplete="off" data-endpoint-cle="${id}"
                            placeholder="${Utils.escapeHtml(I18n.t(
@@ -719,33 +785,33 @@ const SettingsPage = {
                                                     : 'endpoints.key_unset'))}">
                 </div>
                 <div class="${distant ? 'alert alert-warning' : 'form-hint'}">${
-                    Utils.escapeHtml(trajet)}</div>
+                    Utils.escapeHtml(trajet)}</div>${avertissement}
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary btn-sm"
-                            data-endpoint-action="modeles" data-endpoint-id="${id}">
+                            data-endpoint-action="modeles" data-endpoint-id="${id}"${bloque}>
                         <i class="fas fa-rotate" aria-hidden="true"></i>
-                        <span data-i18n-key="endpoints.load_models"></span>
+                        <span>${Utils.escapeHtml(I18n.t('endpoints.load_models'))}</span>
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm"
-                            data-endpoint-action="essai" data-endpoint-id="${id}">
+                            data-endpoint-action="essai" data-endpoint-id="${id}"${bloque}>
                         <i class="fas fa-plug-circle-check" aria-hidden="true"></i>
-                        <span data-i18n-key="endpoints.trial"></span>
+                        <span>${Utils.escapeHtml(I18n.t('endpoints.trial'))}</span>
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm"
-                            data-endpoint-action="poser-cle" data-endpoint-id="${id}">
+                            data-endpoint-action="poser-cle" data-endpoint-id="${id}"${bloque}>
                         <i class="fas fa-key" aria-hidden="true"></i>
-                        <span data-i18n-key="endpoints.set_key"></span>
+                        <span>${Utils.escapeHtml(I18n.t('endpoints.set_key'))}</span>
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm"
                             data-endpoint-action="retirer-cle" data-endpoint-id="${id}"
-                            ${prereglage.cle_posee ? '' : 'disabled'}>
+                            ${prereglage.cle_posee && servable ? '' : 'disabled'}>
                         <i class="fas fa-key" aria-hidden="true"></i>
-                        <span data-i18n-key="endpoints.clear_key"></span>
+                        <span>${Utils.escapeHtml(I18n.t('endpoints.clear_key'))}</span>
                     </button>
                     <button type="button" class="btn btn-danger btn-sm"
                             data-endpoint-action="supprimer" data-endpoint-id="${id}">
                         <i class="fas fa-trash" aria-hidden="true"></i>
-                        <span data-i18n-key="endpoints.remove_preset"></span>
+                        <span>${Utils.escapeHtml(I18n.t('endpoints.remove_preset'))}</span>
                     </button>
                 </div>
             </div>`;
@@ -778,8 +844,8 @@ const SettingsPage = {
                     I18n.t(`endpoints.origin.${usage.origine}`, {
                         hote: usage.hote, modele: usage.modele }))}</div>
                 <div class="form-row">
-                    <label class="form-label" for="endpoint-use-${code}"
-                           data-i18n-key="endpoints.use_preset"></label>
+                    <label class="form-label" for="endpoint-use-${code}">${
+                        Utils.escapeHtml(I18n.t('endpoints.use_preset'))}</label>
                     <select class="form-select" id="endpoint-use-${code}"
                             data-endpoint-usage="${code}"${impose ? ' disabled' : ''}>
                         ${options}

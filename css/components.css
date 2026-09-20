@@ -1722,3 +1722,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* Un secret affiché masqué, sans que le navigateur le prenne pour un mot de
+   passe : sans cela, il proposait de l'enregistrer dans son gestionnaire. */
+.champ-secret {
+    -webkit-text-security: disc;
+}

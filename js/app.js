@@ -332,6 +332,10 @@ const App = {
             typeof ExportModelePage !== 'undefined' ? ExportModelePage : null,
             typeof SeparationPage !== 'undefined' ? SeparationPage : null,
             typeof MouvementPage !== 'undefined' ? MouvementPage : null,
+            typeof UsagePage !== 'undefined' ? UsagePage : null,
+            typeof ControlesPage !== 'undefined' ? ControlesPage : null,
+            typeof ConstatsIdentite !== 'undefined' ? ConstatsIdentite : null,
+            typeof ApprentissagePage !== 'undefined' ? ApprentissagePage : null,
             typeof DashboardPage !== 'undefined' ? DashboardPage : null,
             typeof WorkspacesPage !== 'undefined' ? WorkspacesPage : null,
             typeof WorkspaceManager !== 'undefined' ? WorkspaceManager : null,
@@ -444,9 +448,16 @@ const App = {
                 break;
             case 'separation-conflits':
                 if (typeof SeparationPage !== 'undefined') SeparationPage.initConflits();
+                if (typeof ControlesPage !== 'undefined') ControlesPage.init();
                 break;
             case 'mouvement':
                 if (typeof MouvementPage !== 'undefined') MouvementPage.init();
+                break;
+            case 'usage':
+                if (typeof UsagePage !== 'undefined') UsagePage.init();
+                break;
+            case 'apprentissage':
+                if (typeof ApprentissagePage !== 'undefined') ApprentissagePage.init();
                 break;
         }
     },

@@ -215,6 +215,18 @@
                                     <span data-i18n-key="nav.mouvement">Droits conserves</span>
                                 </a>
                             </li>
+                            <li>
+                                <a href="#usage" class="nav-link" data-page="usage">
+                                    <i class="fas fa-hourglass-half" aria-hidden="true"></i>
+                                    <span data-i18n-key="nav.usage"></span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#apprentissage" class="nav-link" data-page="apprentissage">
+                                    <i class="fas fa-graduation-cap" aria-hidden="true"></i>
+                                    <span data-i18n-key="nav.apprentissage"></span>
+                                </a>
+                            </li>
                         </ul>
                     </div>
                     <div class="nav-section">
@@ -819,6 +831,20 @@
                                                 <input type="number" id="mining-apport-minimal" class="form-input" min="1" aria-describedby="mining-apport-minimal-hint">
                                                 <span id="mining-apport-minimal-hint" class="form-hint" data-i18n-key="form.apport_minimal.hint"></span>
                                             </div>
+                                            <!-- Comment choisir les roles parmi les candidats.
+                                                 Le plus court n'est pas le meilleur sur une
+                                                 donnee bruitee : le choix revient a l'utilisateur,
+                                                 et le repli vient du workspace. -->
+                                            <div class="form-group">
+                                                <label for="mining-selection" class="form-label" data-i18n-key="form.selection.label"></label>
+                                                <div class="select-wrapper">
+                                                    <select id="mining-selection" class="form-select" aria-describedby="mining-selection-hint">
+                                                        <option value="gloutonne" data-i18n-key="mining.selection.gloutonne"></option>
+                                                        <option value="exacte" data-i18n-key="mining.selection.exacte"></option>
+                                                    </select>
+                                                </div>
+                                                <span id="mining-selection-hint" class="form-hint" data-i18n-key="form.selection.hint"></span>
+                                            </div>
                                         </div>
                                         <!-- Comment amorcer un candidat. Aucune de ces trois
                                              facons n'est meilleure en soi : chacune trouve des
@@ -1057,6 +1083,18 @@
                                             <span class="stat-value" id="mining-wsc">0</span>
                                         </div>
                                     </div>
+                                        <!-- La meme complexite, comptee avec l'heritage :
+                                             ce que l'IGA porterait si elle recoit la
+                                             hierarchie. C'est le WSC de la litterature. -->
+                                        <div class="stat-card mini" id="mining-stat-wsc-hierarchique" data-definition="definition.stats.wsc_hierarchique">
+                                        <div class="stat-card-icon">
+                                            <i class="fas fa-sitemap" aria-hidden="true"></i>
+                                        </div>
+                                        <div class="stat-card-content">
+                                            <span class="stat-label" data-i18n-key="stats.wsc_hierarchique"></span>
+                                            <span class="stat-value" id="mining-wsc-hierarchique">0</span>
+                                        </div>
+                                    </div>
                                     </div>
                                 </div>
 
@@ -1068,6 +1106,11 @@
                                      se lirait sinon comme un referentiel qui ne
                                      porte que ces roles-la. -->
                                 <p id="mining-sous-apport" class="mining-model-summary mining-avertissement"
+                                   role="status" hidden></p>
+                                <!-- Ce que la selection exacte a fait : combien de
+                                     roles le glouton aurait retenus, et pourquoi la
+                                     recherche s'est arretee. -->
+                                <p id="mining-selection-compte-rendu" class="mining-model-summary"
                                    role="status" hidden></p>
 
                                 
@@ -1604,6 +1647,24 @@
                                 <div id="separation-conflits" aria-live="polite"></div>
                             </div>
                         </div>
+
+                        <!-- Les controles compensatoires : ce qui rend une
+                             exception defendable. Un executant, un relecteur
+                             qui n'est pas lui, un age maximal, et chaque
+                             execution consignee avec sa preuve. -->
+                        <div class="card" id="controles-compensatoires">
+                            <div class="card-header">
+                                <h2 class="card-title" data-i18n-key="controle.title"></h2>
+                                <div class="page-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="controles-ajouter" data-i18n-key="controle.add"></button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="controles-enregistrer" data-i18n-key="action.save"></button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <p class="form-hint" data-i18n-key="controle.intro"></p>
+                                <div id="controles-liste" aria-live="polite"></div>
+                            </div>
+                        </div>
                     </section>
                     <!-- Les droits conservés d'un poste précédent. Le
                          regroupement vient de l'utilisateur : le produit ne
@@ -1630,6 +1691,126 @@
                                           data-i18n-key="mouvement.attribut.hint"></span>
                                 </div>
                                 <div id="mouvement-resultat" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </section>
+                    <!-- Le signal d'usage : ce qui est detenu et ne sert plus.
+                         Rien n'est lu tant que l'utilisateur n'a pas declare
+                         la colonne, le format des dates et le seuil. -->
+                    <section id="page-apprentissage" class="page" data-page="apprentissage">
+                        <div class="page-header">
+                            <div class="page-header-content">
+                                <h1 class="page-title" data-i18n-key="apprentissage.title"></h1>
+                                <p class="page-description" data-i18n-key="apprentissage.intro"></p>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-body">
+                                <div id="apprentissage-etat" aria-live="polite"></div>
+                                <div class="form-actions">
+                                    <button type="button" class="btn btn-secondary" id="apprentissage-oublier" data-i18n-key="apprentissage.oublier"></button>
+                                </div>
+                                <div class="table-wrapper" role="region" data-i18n-aria-label="apprentissage.historique">
+                                    <table class="data-table">
+                                        <thead><tr>
+                                            <th scope="col" data-i18n-key="apprentissage.colonne.role"></th>
+                                            <th scope="col" data-i18n-key="apprentissage.colonne.verdict"></th>
+                                            <th scope="col" data-i18n-key="apprentissage.colonne.date"></th>
+                                            <th scope="col" data-i18n-key="apprentissage.colonne.apprend"></th>
+                                        </tr></thead>
+                                        <tbody id="apprentissage-historique"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="page-usage" class="page" data-page="usage">
+                        <div class="page-header">
+                            <div class="page-header-content">
+                                <h1 class="page-title" data-i18n-key="usage.title"></h1>
+                                <p class="page-description" data-i18n-key="usage.intro"></p>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="usage-colonne-habilitation" class="form-label" data-i18n-key="usage.colonne_habilitation.label"></label>
+                                        <select id="usage-colonne-habilitation" class="form-select"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="usage-colonne-identite" class="form-label" data-i18n-key="usage.colonne_identite.label"></label>
+                                        <select id="usage-colonne-identite" class="form-select"></select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="usage-format" class="form-label" data-i18n-key="usage.format.label"></label>
+                                        <input type="text" id="usage-format" class="form-input" maxlength="64"
+                                               data-i18n-placeholder="usage.format.placeholder" aria-describedby="usage-format-hint">
+                                        <span id="usage-format-hint" class="form-hint" data-i18n-key="usage.format.hint"></span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="usage-seuil" class="form-label" data-i18n-key="usage.seuil.label"></label>
+                                        <input type="number" id="usage-seuil" class="form-input" min="1" step="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="usage-limite" class="form-label" data-i18n-key="usage.limite.label"></label>
+                                        <input type="number" id="usage-limite" class="form-input" min="1" step="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="usage-date-reference" class="form-label" data-i18n-key="usage.date_reference.label"></label>
+                                        <input type="date" id="usage-date-reference" class="form-input" aria-describedby="usage-date-reference-hint">
+                                        <span id="usage-date-reference-hint" class="form-hint" data-i18n-key="usage.date_reference.hint"></span>
+                                    </div>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="button" class="btn btn-primary" id="usage-calculer" data-i18n-key="usage.calculer"></button>
+                                </div>
+                                <div id="usage-resultat" aria-live="polite"></div>
+                                <div id="usage-liste" hidden>
+                                    <h3 id="usage-liste-titre"></h3>
+                                    <div class="data-table-container">
+                                        <div class="table-toolbar">
+                                            <div class="table-search">
+                                                <i class="fas fa-search" aria-hidden="true"></i>
+                                                <input type="text" id="usage-liste-recherche"
+                                                       data-i18n-placeholder="search.user_placeholder"
+                                                       data-i18n-aria-label="search.user_placeholder">
+                                            </div>
+                                            <div class="table-filters">
+                                                <span class="table-count">
+                                                    <span id="usage-liste-compte">0</span>
+                                                    <span data-i18n-key="table.results"></span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="table-wrapper" role="region" data-i18n-aria-label="aria.region.table_identities">
+                                            <table class="data-table">
+                                                <thead id="usage-liste-thead"></thead>
+                                                <tbody id="usage-liste-corps"></tbody>
+                                            </table>
+                                        </div>
+                                        <div class="table-pagination">
+                                            <button class="pagination-btn" id="usage-liste-prev" disabled>
+                                                <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                                                <span data-i18n-key="pagination.previous"></span>
+                                            </button>
+                                            <div class="pagination-info">
+                                                <span data-i18n-key="pagination.page"></span>
+                                                <span class="pagination-current" id="usage-liste-current-page">1</span>
+                                                <span data-i18n-key="pagination.of"></span>
+                                                <span class="pagination-total" id="usage-liste-total-pages">1</span>
+                                            </div>
+                                            <button class="pagination-btn" id="usage-liste-next">
+                                                <span data-i18n-key="pagination.next"></span>
+                                                <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -2131,6 +2312,50 @@
                                             <span id="cfg-troncature-bornes-hint" class="form-hint" data-i18n-key="form.troncature_bornes.hint"></span>
                                         </div>
                                         <div class="form-group">
+                                            <label for="cfg-derogation-duree" class="form-label" data-i18n-key="form.derogation_duree.label"></label>
+                                            <input type="number" id="cfg-derogation-duree" class="form-input" min="1" step="1" aria-describedby="cfg-derogation-duree-hint">
+                                            <span id="cfg-derogation-duree-hint" class="form-hint" data-i18n-key="form.derogation_duree.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-derogation-preavis" class="form-label" data-i18n-key="form.derogation_preavis.label"></label>
+                                            <input type="number" id="cfg-derogation-preavis" class="form-input" min="0" step="1" aria-describedby="cfg-derogation-preavis-hint">
+                                            <span id="cfg-derogation-preavis-hint" class="form-hint" data-i18n-key="form.derogation_preavis.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="chart-option" for="cfg-derogation-controle">
+                                                <input type="checkbox" id="cfg-derogation-controle" aria-describedby="cfg-derogation-controle-hint">
+                                                <span data-i18n-key="form.derogation_controle.label"></span>
+                                            </label>
+                                            <span id="cfg-derogation-controle-hint" class="form-hint" data-i18n-key="form.derogation_controle.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="chart-option" for="cfg-derogation-approbation">
+                                                <input type="checkbox" id="cfg-derogation-approbation" aria-describedby="cfg-derogation-approbation-hint">
+                                                <span data-i18n-key="form.derogation_approbation.label"></span>
+                                            </label>
+                                            <span id="cfg-derogation-approbation-hint" class="form-hint" data-i18n-key="form.derogation_approbation.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-apprentissage-min" class="form-label" data-i18n-key="form.apprentissage_min.label"></label>
+                                            <input type="number" id="cfg-apprentissage-min" class="form-input" min="2" step="1" aria-describedby="cfg-apprentissage-min-hint">
+                                            <span id="cfg-apprentissage-min-hint" class="form-hint" data-i18n-key="form.apprentissage_min.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-apprentissage-verdict" class="form-label" data-i18n-key="form.apprentissage_verdict.label"></label>
+                                            <input type="number" id="cfg-apprentissage-verdict" class="form-input" min="1" step="1" aria-describedby="cfg-apprentissage-verdict-hint">
+                                            <span id="cfg-apprentissage-verdict-hint" class="form-hint" data-i18n-key="form.apprentissage_verdict.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-apprentissage-regularisation" class="form-label" data-i18n-key="form.apprentissage_regularisation.label"></label>
+                                            <input type="number" id="cfg-apprentissage-regularisation" class="form-input" min="0" step="0.1" aria-describedby="cfg-apprentissage-regularisation-hint">
+                                            <span id="cfg-apprentissage-regularisation-hint" class="form-hint" data-i18n-key="form.apprentissage_regularisation.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-sod-severites" class="form-label" data-i18n-key="form.sod_severites.label"></label>
+                                            <textarea id="cfg-sod-severites" class="form-input" rows="4" aria-describedby="cfg-sod-severites-hint"></textarea>
+                                            <span id="cfg-sod-severites-hint" class="form-hint" data-i18n-key="form.sod_severites.hint"></span>
+                                        </div>
+                                        <div class="form-group">
                                             <label for="cfg-profils-croises" class="form-label" data-i18n-key="form.profils_croises.label">Croisement des profils — nombre de profils au-delà duquel il n'est pas tenté</label>
                                             <input type="number" id="cfg-profils-croises" class="form-input" min="0" step="1" aria-describedby="cfg-profils-croises-hint">
                                             <span id="cfg-profils-croises-hint" class="form-hint" data-i18n-key="form.profils_croises.hint">Le croisement compare les profils deux à deux : son coût croît comme le carré de leur nombre. Au-delà de cette borne le produit ne le tente pas et le dit à côté du résultat, plutôt que de faire attendre l'écran. Monter la borne cherche plus de rôles et allonge le calcul.</span>
@@ -2139,6 +2364,24 @@
                                             <label for="cfg-apport-minimal" class="form-label" data-i18n-key="form.apport_minimal.label">Apport minimal d'un rôle</label>
                                             <input type="number" id="cfg-apport-minimal" class="form-input" min="1" step="1" aria-describedby="cfg-apport-minimal-hint">
                                             <span id="cfg-apport-minimal-hint" class="form-hint" data-i18n-key="form.apport_minimal.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-selection" class="form-label" data-i18n-key="form.selection.label"></label>
+                                            <select id="cfg-selection" class="form-input" aria-describedby="cfg-selection-hint">
+                                                <option value="gloutonne" data-i18n-key="mining.selection.gloutonne"></option>
+                                                <option value="exacte" data-i18n-key="mining.selection.exacte"></option>
+                                            </select>
+                                            <span id="cfg-selection-hint" class="form-hint" data-i18n-key="form.selection.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-selection-effort" class="form-label" data-i18n-key="form.selection_effort.label"></label>
+                                            <input type="number" id="cfg-selection-effort" class="form-input" min="1" step="1" aria-describedby="cfg-selection-effort-hint">
+                                            <span id="cfg-selection-effort-hint" class="form-hint" data-i18n-key="form.selection_effort.hint"></span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-selection-delai" class="form-label" data-i18n-key="form.selection_delai.label"></label>
+                                            <input type="number" id="cfg-selection-delai" class="form-input" min="1" step="1" aria-describedby="cfg-selection-delai-hint">
+                                            <span id="cfg-selection-delai-hint" class="form-hint" data-i18n-key="form.selection_delai.hint"></span>
                                         </div>
                                         <div class="form-group">
                                             <label for="cfg-max-roles-plafond" class="form-label" data-i18n-key="form.max_roles_plafond.label">Plafond du nombre de rôles qu'une demande peut réclamer</label>
@@ -2203,6 +2446,18 @@
                                                     <span data-i18n-key="privileges.ask"></span>
                                                 </button>
                                             </div>
+                                            <fieldset class="privileges-mesure">
+                                                <legend class="form-label" data-i18n-key="privileges.mesure.legende"></legend>
+                                                <p class="form-hint" data-i18n-key="privileges.mesure.hint"></p>
+                                                <div id="cfg-privileged-personne" class="attribute-checkboxes"></div>
+                                                <div class="form-actions">
+                                                    <button type="button" class="btn btn-secondary btn-sm" id="cfg-privileged-mesurer">
+                                                        <i class="fas fa-ruler" aria-hidden="true"></i>
+                                                        <span data-i18n-key="privileges.mesure.lancer"></span>
+                                                    </button>
+                                                </div>
+                                                <div id="cfg-privileged-mesure-resume" aria-live="polite"></div>
+                                            </fieldset>
                                             <div id="cfg-privileged-proposal"></div>
                                         </div>
                                         <div class="form-group">
@@ -3476,6 +3731,72 @@
                             </button>
                         </div>
                     </div>
+                    <!-- Les acces proches du role : faut-il faire entrer cet acces
+                         dans le role ? Trois populations par couple (role, acces),
+                         chacune depliable en noms. Ecrit ici et non construit par
+                         le JavaScript, pour la meme raison que les porteurs. -->
+                    <section id="role-proches" class="role-proches">
+                        <h3 data-i18n-key="role.proches.title"></h3>
+                        <p class="form-hint" data-i18n-key="role.proches.hint"></p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="role-proches-jaccard" class="form-label" data-i18n-key="role.proches.jaccard.label"></label>
+                                <input type="number" id="role-proches-jaccard" class="form-input" min="0" max="1" step="0.01" aria-describedby="role-proches-jaccard-hint">
+                                <span id="role-proches-jaccard-hint" class="form-hint" data-i18n-key="role.proches.jaccard.hint"></span>
+                            </div>
+                            <div class="form-group">
+                                <label for="role-proches-limite" class="form-label" data-i18n-key="role.proches.limite.label"></label>
+                                <input type="number" id="role-proches-limite" class="form-input" min="1" step="1">
+                            </div>
+                        </div>
+                        <div class="role-detail-actions">
+                            <button type="button" class="btn btn-sm btn-secondary" id="role-proches-calculer" data-i18n-key="role.proches.calculer"></button>
+                        </div>
+                        <p class="form-hint" id="role-proches-resume" role="status" hidden></p>
+                        <div id="role-proches-resultats"></div>
+                        <div id="role-proches-population" hidden>
+                            <h4 id="role-proches-population-titre"></h4>
+                            <div class="data-table-container">
+                                <div class="table-toolbar">
+                                    <div class="table-search">
+                                        <i class="fas fa-search" aria-hidden="true"></i>
+                                        <input type="text" id="role-proches-pop-search"
+                                               data-i18n-placeholder="search.user_placeholder"
+                                               data-i18n-aria-label="search.user_placeholder">
+                                    </div>
+                                    <div class="table-filters">
+                                        <span class="table-count">
+                                            <span id="role-proches-pop-count">0</span>
+                                            <span data-i18n-key="table.results"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="table-wrapper" role="region"
+                                     data-i18n-aria-label="aria.region.table_identities">
+                                    <table class="data-table" id="role-proches-pop-table">
+                                        <thead id="role-proches-pop-thead"></thead>
+                                        <tbody id="role-proches-pop-list"></tbody>
+                                    </table>
+                                </div>
+                                <div class="table-pagination">
+                                    <button class="pagination-btn" id="role-proches-pop-prev" disabled>
+                                        <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                                        <span data-i18n-key="pagination.previous"></span>
+                                    </button>
+                                    <div class="pagination-info">
+                                        <span data-i18n-key="pagination.page"></span>
+                                        <span class="pagination-current" id="role-proches-pop-current-page">1</span>
+                                        <span data-i18n-key="pagination.of"></span>
+                                        <span class="pagination-total" id="role-proches-pop-total-pages">1</span>
+                                    </div>
+                                    <button class="pagination-btn" id="role-proches-pop-next">
+                                        <span data-i18n-key="pagination.next"></span>
+                                        <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                     <div id="role-detail-suite">
                     </div>
                 </div>
@@ -3560,6 +3881,16 @@
                             data-i18n-aria-label="action.close" aria-label="Fermer">&times;</button>
                 </div>
                 <div class="modal-body">
+                    <section id="identite-constats" class="identite-constats" hidden
+                             aria-labelledby="identite-constats-titre">
+                        <h3 id="identite-constats-titre" data-i18n-key="identite.constats.title">Ce que le produit constate</h3>
+                        <p class="form-hint" data-i18n-key="identite.constats.hint">Chaque constat garde son chiffre ; aucun score ne les additionne.</p>
+                        <div class="form-group identite-constats__pairs">
+                            <label for="identite-constats-pairs" data-i18n-key="mouvement.attribut.label">Qui sont ses pairs</label>
+                            <select id="identite-constats-pairs" class="form-select"></select>
+                        </div>
+                        <div id="identite-constats-corps" aria-live="polite"></div>
+                    </section>
                     <div id="habilitations-modal-content">
                         <!-- Contenu chargé dynamiquement -->
                     </div>
@@ -3649,8 +3980,8 @@
         <div class="toast-container" id="toast-container" role="status"
              aria-live="polite" aria-relevant="additions"></div>
         <!-- Le pont se pose AVANT tout script du produit : l interface ne doit jamais voir le fetch d origine. -->
-    <script src="moteur/pyodide.js?v=df0f41041c74"></script>
-    <script src="moteur/pont.js?v=df0f41041c74"></script>
+    <script src="moteur/pyodide.js?v=bc97bd8e54c2"></script>
+    <script src="moteur/pont.js?v=bc97bd8e54c2"></script>
         <script src="vendor/chartjs/chart.umd.js?v=4.4.0"></script>
         <script src="js/config.js?v=4.4.0"></script>
         <script src="js/utils.js?v=4.4.0"></script>
@@ -3680,6 +4011,11 @@
         <script src="js/modules/theme_visuel.js?v=4.4.0"></script>
 		<script src="vendor/vis-network/vis-network.min.js?v=4.4.0"></script>
 		<script src="js/pages/separation.js?v=4.4.0"></script>
+		<script src="js/pages/controles.js?v=4.4.0"></script>
+		<script src="js/pages/usage.js?v=4.4.0"></script>
+		<script src="js/modules/constats_identite.js?v=4.4.0"></script>
+		<script src="js/modules/toile.js?v=4.4.0"></script>
+		<script src="js/pages/apprentissage.js?v=4.4.0"></script>
 		<script src="js/pages/mouvement.js?v=4.4.0"></script>
 		<script src="js/pages/graph_view.js?v=4.4.0"></script>
 		<script src="js/app.js?v=4.4.0"></script>

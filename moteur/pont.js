@@ -128,8 +128,13 @@ import urllib.error
 from src.core.annotation import annotateur as _annotateur
 
 
-def _aller_retour(adresse, entetes, corps, delai_ms):
-    """Un aller-retour HTTP par le navigateur. Rend (statut, texte)."""
+def _aller_retour(adresse, entetes, corps, delai_ms, methode="POST"):
+    """Un aller-retour HTTP par le navigateur. Rend (statut, texte).
+
+    La methode est un parametre depuis que la lecture des modeles passe aussi
+    par ici : elle est en GET, et un GET ne porte pas de corps. POST reste la
+    valeur par defaut, et l'envoi des vraies questions ne change pas.
+    """
     import js
     from pyodide.ffi import to_js
 
@@ -137,21 +142,22 @@ def _aller_retour(adresse, entetes, corps, delai_ms):
 
     run_sync = getattr(_ffi, "run_sync", None)
     if run_sync is not None:
-        options = to_js(
-            {"method": "POST", "headers": entetes, "body": corps,
-             "signal": js.AbortSignal.timeout(delai_ms)},
-            dict_converter=js.Object.fromEntries)
-        reponse = run_sync(js.fetch(adresse, options))
+        options = {"method": methode, "headers": entetes,
+                   "signal": js.AbortSignal.timeout(delai_ms)}
+        if methode != "GET":
+            options["body"] = corps
+        reponse = run_sync(js.fetch(
+            adresse, to_js(options, dict_converter=js.Object.fromEntries)))
         return int(reponse.status), str(run_sync(reponse.text()))
 
     # Sans JSPI, il reste la requete synchrone. Elle fige l'onglet le temps de
     # la reponse : c'est moins bon, mais c'est mieux que pas de modele.
     requete = js.XMLHttpRequest.new()
-    requete.open("POST", adresse, False)
+    requete.open(methode, adresse, False)
     for cle, valeur in entetes.items():
         requete.setRequestHeader(cle, valeur)
     requete.timeout = delai_ms
-    requete.send(corps)
+    requete.send(None if methode == "GET" else corps)
     return int(requete.status), str(requete.responseText or "")
 
 
@@ -176,6 +182,36 @@ def _poster_par_le_navigateur(charge, reglages):
 
 
 _annotateur._poster = _poster_par_le_navigateur
+
+
+def _lister_par_le_navigateur(reglages):
+    """La lecture des modeles, par le navigateur, comme l'envoi.
+
+    Elle avait ete ecrite comme une fonction a part pour pouvoir etre
+    branchee ici, et ne l'avait jamais ete : dans la page, elle tentait
+    d'ouvrir une connexion que le navigateur ne donne pas, et l'ecran disait
+    que le fournisseur n'avait pas repondu. Les erreurs rendues sont les memes
+    que celles de l'envoi, pour que l'ecran distingue une cle refusee d'un
+    serveur injoignable.
+    """
+    adresse = reglages.adresse + "/models"
+    try:
+        statut, texte = _aller_retour(
+            adresse, _annotateur.entetes(reglages), None,
+            int(float(reglages.delai_s) * 1000), methode="GET")
+    except Exception as erreur:  # une panne de reseau, un refus d'origine
+        raise urllib.error.URLError(
+            "lecture des modeles impossible (%s) : %s"
+            % (adresse, type(erreur).__name__)) from None
+
+    if statut >= 400:
+        raise urllib.error.HTTPError(adresse, statut, texte[:200], None, None)
+
+    brut = texte.encode("utf-8")[: _annotateur.REPONSE_MAX_OCTETS]
+    return _json.loads(brut.decode("utf-8", "ignore"))
+
+
+_annotateur._lister = _lister_par_le_navigateur
 
 
 def _declarer_le_modele(reglages_json):

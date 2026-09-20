@@ -193,7 +193,9 @@ const MouvementPage = {
                             droit: droit.droit,
                             autres: Utils.formatNumber(droit.autres_du_groupe),
                             part: droit.part_de_l_origine,
-                            origine: constat.origine}))}</li>`).join('')}
+                            origine: constat.origine}))}${droit.justifie ? `
+                            <span class="badge badge-success">${Utils.escapeHtml(
+                                I18n.t('ecart.justifie'))}</span>` : ''}</li>`).join('')}
                 </ul>
             </li>`;
     },

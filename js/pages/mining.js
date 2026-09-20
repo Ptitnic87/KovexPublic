@@ -98,6 +98,15 @@ const MiningPage = {
             }
         });
 
+        // La sélection des rôles vient du workspace, comme l'apport minimal :
+        // le gabarit ne présélectionne rien de lui-même, faute de quoi un
+        // workspace réglé autrement verrait son choix écrasé par l'écran.
+        const selection = document.getElementById('mining-selection');
+        const choisie = reglages && reglages.mining_selection;
+        if (selection && Array.from(selection.options).some((option) => option.value === choisie)) {
+            selection.value = choisie;
+        }
+
         // Le plafond du nombre de rôles borne la **saisie**, il ne la
         // remplit pas : la valeur demandée reste celle de l'utilisateur.
         //
@@ -120,6 +129,42 @@ const MiningPage = {
      * devenir un plancher de un posé par l'écran, sans quoi un workspace
      * réglé plus haut verrait son réglage écrasé par un formulaire.
      */
+    selectionChoisie() {
+        const valeur = document.getElementById('mining-selection')?.value;
+        return valeur ? valeur : undefined;
+    },
+
+    /**
+     * Ce que la sélection exacte a fait, en une phrase, ou rien.
+     *
+     * Le glouton ne dit rien : c'est le calcul de toujours. La sélection
+     * exacte, elle, dit toujours quelque chose — combien de rôles le glouton
+     * aurait retenus, et pourquoi la recherche s'est arrêtée. Un modèle plus
+     * court présenté sans le chiffre qu'il remplace ne se vérifierait pas.
+     */
+    compteRenduDeSelection(engine, roles) {
+        if (!engine || engine.selection !== 'exacte' || !engine.selection_arret
+            || typeof roles !== 'number') return '';
+        const arret = engine.selection_arret;
+        const valeurs = {
+            roles: Utils.formatNumber(roles),
+            glouton: Utils.formatNumber(engine.selection_roles_glouton ?? roles)
+        };
+        const plusCourt = typeof engine.selection_roles_glouton === 'number'
+            && roles < engine.selection_roles_glouton;
+        const cle = (arret === 'effort' || arret === 'delai') && !plusCourt
+            ? `mining.selection.arret.${arret}_sans_gain`
+            : `mining.selection.arret.${arret}`;
+        let phrase = I18n.t(cle, valeurs);
+        if (typeof engine.selection_borne === 'number'
+            && (arret === 'effort' || arret === 'delai')) {
+            phrase += ' ' + I18n.t('mining.selection.borne', {
+                borne: Utils.formatNumber(engine.selection_borne)
+            });
+        }
+        return phrase;
+    },
+
     apportMinimalSaisi() {
         const brut = document.getElementById('mining-apport-minimal')?.value;
         if (brut === undefined || String(brut).trim() === '') return undefined;
@@ -132,6 +177,14 @@ const MiningPage = {
     * Utilise SHA-256 via Web Crypto API (identique au backend)
     */
     bindEvents() {
+        // L'état de l'annotateur est lu une fois, et c'est voulu. Mais il se
+        // règle maintenant dans les paramètres, en cours de séance : quand
+        // l'écran des paramètres dit qu'il a changé, on l'oublie, et le
+        // prochain rôle ouvert le relit.
+        document.addEventListener('kovex:assistance-modifiee', () => {
+            this.etatAnnotateur = null;
+        });
+
         // Le récapitulatif suit la saisie. Délégation plutôt qu'un écouteur par
         // champ : le formulaire en compte huit, et un neuvième ajouté demain
         // serait sinon absent de la phrase sans que rien ne le dise.
@@ -1620,6 +1673,7 @@ const MiningPage = {
         // autrement qu'à la souris.
         if (typeof Definitions !== 'undefined') Definitions.preparer(container);
         this.marquerLesCartes(container, results);
+        this.scorerLesCartes(container, results);
     },
 
     /**
@@ -1667,6 +1721,75 @@ const MiningPage = {
                                               {count: ensemble.regles.length}))}
                 </span>`);
         });
+    },
+
+    /**
+     * « Ressemble à ce que vous validez » : le score appris des décisions du
+     * workspace, posé sur chaque carte à côté des chiffres, jamais à leur place.
+     *
+     * Seuls les chiffres de la carte partent vers le serveur — ni porteurs ni
+     * droits. Sans assez de décisions, aucune carte n'est marquée, et une
+     * phrase dit combien il en manque : un score appris sur six décisions se
+     * lirait comme un avis. Le score ordonne l'attention ; il ne décide rien.
+     */
+    async scorerLesCartes(container, roles) {
+        const candidats = (roles || []).map((role, index) => ({
+            cle: String(index),
+            indicateurs: this.indicateursDuScore(role),
+        }));
+        if (!candidats.length) return;
+        const jeton = (this.jetonDuScore = (this.jetonDuScore || 0) + 1);
+        let rendu;
+        try {
+            rendu = await API.post('/apprentissage/ressemblance', {candidats});
+        } catch (erreur) {
+            return;
+        }
+        if (jeton !== this.jetonDuScore || !container.isConnected) return;
+        container.querySelector('.mining-apprentissage')?.remove();
+        container.insertAdjacentHTML('afterbegin', `<div class="mining-apprentissage form-hint">${
+            rendu.pret
+                ? Utils.escapeHtml(I18n.t('apprentissage.bandeau', {decisions: rendu.decisions}))
+                : ApprentissagePage.phraseDEtat(rendu)}</div>`);
+        (rendu.candidats || []).forEach((score) => {
+            if (!score.comparable) return;
+            const carte = container.querySelector(
+                `.mining-role-card[data-index="${score.cle}"]`);
+            const stats = carte?.querySelector('.mining-role-stats');
+            if (!stats || carte.querySelector('.mining-role-ressemblance')) return;
+            stats.insertAdjacentHTML('beforeend', `
+                <span class="mining-role-stat mining-role-ressemblance"
+                      title="${Utils.escapeHtml(this.raisonsDuScore(score))}">
+                    <i class="fas fa-graduation-cap" aria-hidden="true"></i>
+                    ${Utils.escapeHtml(I18n.t('apprentissage.carte',
+                                              {pct: Utils.formatNumber(score.probabilite_pct)}))}
+                    <span class="mining-role-ressemblance__raisons">${
+                        Utils.escapeHtml(this.raisonsDuScore(score))}</span>
+                    ${score.toile ? `<span class="mining-role-toile">${Toile.svg(
+                        rendu.axes_de_la_toile, score.toile, rendu.toile_des_validees)}</span>` : ''}
+                </span>`);
+        });
+    },
+
+    /** Les seuls chiffres que le score connaît, pris sur la carte. */
+    indicateursDuScore(role) {
+        const indicateurs = this.indicateursDeDecision(role) || {};
+        const retenus = {};
+        ['right_count', 'user_count', 'over_granted', 'fit_pct', 'redundancy_pct']
+            .forEach((cle) => {
+                if (typeof indicateurs[cle] === 'number') retenus[cle] = indicateurs[cle];
+            });
+        return retenus;
+    },
+
+    /** Les deux raisons les plus fortes, dans le sens où elles tirent. */
+    raisonsDuScore(score) {
+        return (score.contributions || []).slice(0, 2)
+            .filter((une) => une.contribution !== 0)
+            .map((une) => I18n.t(une.contribution > 0 ? 'apprentissage.raison.pour'
+                                                      : 'apprentissage.raison.contre',
+                                 {grandeur: I18n.t(`apprentissage.grandeur.${une.grandeur}`)}))
+            .join(' · ');
     },
 
     /**
@@ -2451,6 +2574,8 @@ const MiningPage = {
             };
             const apport = this.apportMinimalSaisi();
             if (apport !== undefined) params.apport_minimal = apport;
+            const selection = this.selectionChoisie();
+            if (selection !== undefined) params.selection = selection;
 
             const contrainte = document.getElementById('threshold-max-over-granted')?.value;
             if (contrainte !== undefined && String(contrainte).trim() !== '') {
@@ -2660,6 +2785,8 @@ const MiningPage = {
                 params.generateurs = this.generateursChoisis();
                 const apportMinimal = this.apportMinimalSaisi();
                 if (apportMinimal !== undefined) params.apport_minimal = apportMinimal;
+                const selection = this.selectionChoisie();
+                if (selection !== undefined) params.selection = selection;
             }
 
             const perte = document.getElementById('consolidation-max-loss')?.value;
@@ -2861,6 +2988,8 @@ const MiningPage = {
                 params.generateurs = this.generateursChoisis();
                 const apportMinimal = this.apportMinimalSaisi();
                 if (apportMinimal !== undefined) params.apport_minimal = apportMinimal;
+                const selection = this.selectionChoisie();
+                if (selection !== undefined) params.selection = selection;
             }
 
             // Consolidation : retirer des candidats est une decision. Sans
@@ -3204,6 +3333,15 @@ const MiningPage = {
                 : '';
         }
 
+        // Ce que la sélection exacte a fait. Rien pour le glouton.
+        const compteRendu = document.getElementById('mining-selection-compte-rendu');
+        if (compteRendu) {
+            const engine = stats.engine || {};
+            const phrase = this.compteRenduDeSelection(engine, engine.selection_roles);
+            compteRendu.hidden = !phrase;
+            compteRendu.textContent = phrase;
+        }
+
         // Qualite du modele : ce que valent les roles pris ensemble.
         const compression = document.getElementById('mining-compression');
         if (compression) compression.textContent = qualite.compression_ratio ?? '-';
@@ -3215,6 +3353,17 @@ const MiningPage = {
         }
         const wsc = document.getElementById('mining-wsc');
         if (wsc) wsc.textContent = Utils.formatNumber(qualite.wsc ?? 0);
+        // La même complexité, comptée avec l'héritage. Absente d'un serveur
+        // d'avant ce lot : la carte disparaît plutôt que d'afficher zéro.
+        const wscHierarchique = (stats.hierarchy || {}).wsc_hierarchique;
+        const carteHierarchique = document.getElementById('mining-stat-wsc-hierarchique');
+        if (carteHierarchique) {
+            carteHierarchique.style.display = typeof wscHierarchique === 'number' ? '' : 'none';
+        }
+        const valeurHierarchique = document.getElementById('mining-wsc-hierarchique');
+        if (valeurHierarchique && typeof wscHierarchique === 'number') {
+            valeurHierarchique.textContent = Utils.formatNumber(wscHierarchique);
+        }
 
         const resume = document.getElementById('mining-model-summary');
         if (resume) {
@@ -3324,6 +3473,7 @@ const MiningPage = {
         // moteurs. Deux marquages écrits séparément finiraient par ne pas dire
         // la même chose du même candidat.
         this.marquerLesCartes(container, results);
+        this.scorerLesCartes(container, results);
     },
 
     /**
@@ -3425,7 +3575,7 @@ const MiningPage = {
         }
 
         if (!etat.actif) {
-            zone.textContent = I18n.t('annotator.disabled');
+            zone.textContent = this.raisonDeLAnnotateurInactif(etat);
             actions.hidden = true;
             return;
         }
@@ -3663,9 +3813,31 @@ const MiningPage = {
      * sont pas le même geste. L'écran unitaire annonce déjà les catégories ;
      * celui-ci doit annoncer le volume, parce que c'est lui qui change.
      */
+    /**
+     * Pourquoi le modèle n'est pas proposé, et où le régler.
+     *
+     * Deux conditions, deux cartes des paramètres : le point de terminaison dit
+     * **où** part la question, la matrice d'assistance dit **ce qui** a le
+     * droit de partir. Le même message pour les deux laissait chercher dans la
+     * mauvaise carte.
+     */
+    raisonDeLAnnotateurInactif(etat) {
+        if (etat && etat.point_de_terminaison === false) {
+            // Le nom de la carte vient de son titre : il ne peut pas diverger.
+            return I18n.t('annotator.no_endpoint', {
+                carte: I18n.t('endpoints.title') });
+        }
+        if (etat && etat.usage_ouvert === false) {
+            return I18n.t('annotator.usage_closed', {
+                usage: I18n.t(`assistance.usage.${etat.usage}`),
+                carte: I18n.t('assistance.title') });
+        }
+        return I18n.t('annotator.disabled');
+    },
+
     annonceDuLot() {
         const etat = this.etatAnnotateur;
-        if (!etat || !etat.actif) return I18n.t('annotator.disabled');
+        if (!etat || !etat.actif) return this.raisonDeLAnnotateurInactif(etat);
 
         const categories = [];
         if (etat.envoie_libelles_de_droits) categories.push(I18n.t('annotator.category.rights'));

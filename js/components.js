@@ -306,6 +306,12 @@ class DataTable {
         //  la page, le tri et la recherche.
         this.corps = options.corps || null;
 
+        //: Paramètres d'adresse ajoutés à chaque page, quand l'adresse seule
+        //  ne dit pas quelles lignes rendre — une population d'un couple
+        //  (rôle, accès), par exemple. La fonction est relue à chaque
+        //  chargement : le tableau suit ce que l'utilisateur a choisi.
+        this.parametres = options.parametres || null;
+
         //: Sélection tenue **hors du tableau**, quand il en porte une.
         //
         //  C'est la condition pour que trier ou changer de page ne perde rien :
@@ -406,10 +412,10 @@ class DataTable {
         `;
 
         try {
-            const params = {
+            const params = Object.assign({}, this.parametres ? this.parametres() : {}, {
                 page: this.state.page,
                 size: this.taillePage()
-            };
+            });
             
             if (this.state.search) params.search = this.state.search;
             if (this.state.sortCol) {
@@ -1098,6 +1104,11 @@ const HabilitationsModal = {
         Modal.open('habilitations-modal');
 
         HabilitationsModal.etat = { vue, valeur, elements: [], donnees: null };
+        // Le panneau des constats ne concerne qu'une identité : ouvert sur un
+        // droit ou une application, il montrerait la personne précédente.
+        const panneau = typeof ConstatsIdentite === 'undefined' ? null : ConstatsIdentite;
+        if (panneau && vue.chemin === 'user') panneau.afficher(valeur);
+        else if (panneau) panneau.masquer();
         await HabilitationsModal.charger(0);
     },
 

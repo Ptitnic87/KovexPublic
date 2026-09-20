@@ -186,6 +186,11 @@ const SettingsPage = {
                 'click', () => this.proposerLesComptesAPrivileges());
         }
 
+        const mesurerPrivileges = document.getElementById('cfg-privileged-mesurer');
+        if (mesurerPrivileges) {
+            mesurerPrivileges.addEventListener('click', () => this.mesurerLaConvention());
+        }
+
         const propositionsPrivileges = document.getElementById('cfg-privileged-proposal');
         if (propositionsPrivileges) {
             propositionsPrivileges.addEventListener('click', (evenement) => {
@@ -476,6 +481,43 @@ const SettingsPage = {
         this.renderPerimetre();
     },
 
+    /**
+     * Prévient les autres écrans que ce qui décide d'un appel au modèle a
+     * changé.
+     *
+     * L'écran du mining lit l'état de l'annotateur **une fois** — délibérément,
+     * pour ne pas redemander au serveur à chaque rôle ouvert. Tant que ce
+     * réglage venait de l'environnement du serveur, il ne changeait jamais en
+     * cours de séance. Il se règle désormais ici : on configurait OpenAI, on
+     * revenait valider un rôle, et l'écran disait toujours « désactivé ».
+     * Recharger la page ne sauvait rien — dans la page, la clé ne survit pas
+     * au rechargement.
+     */
+    signalerLeChangementDAssistance() {
+        document.dispatchEvent(new CustomEvent('kovex:assistance-modifiee'));
+    },
+
+    /**
+     * Le type du champ de clé : masqué, **sans** passer pour un mot de passe.
+     *
+     * En `password`, Chrome prenait le champ « Modèle » pour un identifiant et
+     * la clé pour son mot de passe, et proposait d'enregistrer les deux dans le
+     * Gestionnaire de mots de passe Google — synchronisé sur le compte. C'était
+     * exactement la persistance refusée : dans la page, la clé ne doit dormir
+     * nulle part. `autocomplete="off"` n'y fait rien, Chrome l'ignore sur un
+     * champ de mot de passe.
+     *
+     * Un champ texte masqué par la feuille de style n'est pas un mot de passe
+     * pour le navigateur. Là où ce masquage n'existe pas, le champ reste en
+     * `password` : mieux vaut une proposition d'enregistrement qu'une clé
+     * lisible par-dessus l'épaule.
+     */
+    typeDuChampDeCle() {
+        const masquable = typeof CSS !== 'undefined' && CSS.supports
+            && CSS.supports('-webkit-text-security', 'disc');
+        return masquable ? 'text' : 'password';
+    },
+
     /** Un identifiant interne, stable : ce que l'utilisateur nomme est le libellé. */
     identifiantLibre() {
         const pris = new Set(((this.points && this.points.prereglages) || [])
@@ -556,7 +598,8 @@ const SettingsPage = {
                 return;
             }
             try {
-                this.poserLesPoints(await API.poserLaCle(identifiant, cle));
+                this.appliquerLEtatDesCles(await API.poserLaCle(identifiant, cle));
+                this.signalerLeChangementDAssistance();
                 if (champ) champ.value = '';
                 Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_saved'));
             } catch (erreur) {
@@ -567,7 +610,8 @@ const SettingsPage = {
         }
         if (action === 'retirer-cle') {
             try {
-                this.poserLesPoints(await API.retirerLaCle(identifiant));
+                this.appliquerLEtatDesCles(await API.retirerLaCle(identifiant));
+                this.signalerLeChangementDAssistance();
                 Toast.success(I18n.t('common.success'), I18n.t('endpoints.key_cleared'));
             } catch (erreur) {
                 Toast.error(I18n.t('common.error'), erreur.message);
@@ -628,6 +672,7 @@ const SettingsPage = {
         };
         try {
             this.poserLesPoints(await API.savePointsDeTerminaison(charge));
+            this.signalerLeChangementDAssistance();
             Toast.success(I18n.t('common.success'), I18n.t('endpoints.saved'));
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
@@ -661,6 +706,26 @@ const SettingsPage = {
                                libelle: prereglage.libelle || '',
                                adresse: prereglage.adresse || '',
                                modele: prereglage.modele || '' }));
+    },
+
+    /**
+     * Reporte l'état des clés, et rien d'autre.
+     *
+     * Poser une clé redessinait toute la carte depuis la réponse du serveur.
+     * Ce qui n'était pas encore enregistré — le réglage commun choisi, une
+     * surcharge, un préréglage ajouté — disparaissait sans un mot : on
+     * choisissait OpenAI, on posait la clé, et le réglage commun retombait à
+     * « Aucun ». La réponse ne sert plus qu'à dire quelles clés sont posées ;
+     * la saisie en cours reste celle de l'utilisateur.
+     */
+    appliquerLEtatDesCles(reponse) {
+        const posees = new Set((reponse.prereglages || [])
+            .filter((prereglage) => prereglage.cle_posee)
+            .map((prereglage) => prereglage.identifiant));
+        (this.points.prereglages || []).forEach((prereglage) => {
+            prereglage.cle_posee = posees.has(prereglage.identifiant);
+        });
+        this.points.cles_volatiles = reponse.cles_volatiles;
     },
 
     /**
@@ -770,7 +835,7 @@ const SettingsPage = {
                     <label class="form-label" for="endpoint-model-${id}">${
                         Utils.escapeHtml(I18n.t('endpoints.model'))}</label>
                     <input type="text" class="form-input" id="endpoint-model-${id}"
-                           list="endpoint-models-${id}"
+                           list="endpoint-models-${id}" autocomplete="off"
                            data-endpoint-champ="modele" data-endpoint-id="${id}"
                            value="${Utils.escapeHtml(prereglage.modele || '')}">
                     <datalist id="endpoint-models-${id}"></datalist>
@@ -778,8 +843,11 @@ const SettingsPage = {
                 <div class="form-row">
                     <label class="form-label" for="endpoint-key-${id}">${
                         Utils.escapeHtml(I18n.t('endpoints.key'))}</label>
-                    <input type="password" class="form-input" id="endpoint-key-${id}"
-                           autocomplete="off" data-endpoint-cle="${id}"
+                    <input type="${this.typeDuChampDeCle()}"
+                           class="form-input champ-secret" id="endpoint-key-${id}"
+                           autocomplete="off" autocapitalize="off" spellcheck="false"
+                           data-lpignore="true" data-1p-ignore="true"
+                           data-endpoint-cle="${id}"
                            placeholder="${Utils.escapeHtml(I18n.t(
                                prereglage.cle_posee ? 'endpoints.key_set'
                                                     : 'endpoints.key_unset'))}">
@@ -1010,7 +1078,12 @@ const SettingsPage = {
      */
     messageUsage(usage, point) {
         const lignes = [];
-        if (!point.actif) {
+        if (usage.appelle_un_modele === false) {
+            // Aucun modèle de Kovex n'est appelé : c'est l'agent extérieur
+            // qui lit la réponse. Ce qui part, part vers lui.
+            lignes.push(`<div class="alert alert-warning">${
+                Utils.escapeHtml(I18n.t('assistance.external_agent'))}</div>`);
+        } else if (!point.actif) {
             lignes.push(`<div class="form-hint">${
                 Utils.escapeHtml(I18n.t('assistance.no_endpoint'))}</div>`);
         } else {
@@ -1140,6 +1213,7 @@ const SettingsPage = {
         });
         try {
             this.assistance = await API.saveAssistance({ usages });
+            this.signalerLeChangementDAssistance();
             this.renderAssistance();
         } catch (erreur) {
             Toast.error(I18n.t('common.error'),
@@ -1366,6 +1440,88 @@ const SettingsPage = {
 
     //: Dernier dénombrement rendu par le serveur.
     denombrementDesPrivileges: null,
+
+    //: Les colonnes d'identités qui peuvent désigner une personne, et la
+    //  dernière mesure de la convention.
+    colonnesDeLaPersonne: [],
+    mesureDeLaConvention: null,
+
+    /**
+     * Les colonnes d'identités, à cocher pour dire « ceci désigne la personne ».
+     *
+     * Aucune n'est cochée d'office : le produit ne sait pas laquelle porte le
+     * nom, et regrouper sur une colonne choisie à sa place rapprocherait des
+     * gens que rien ne rapproche.
+     */
+    async chargerLesColonnesDeLaPersonne() {
+        const zone = document.getElementById('cfg-privileged-personne');
+        if (!zone) return;
+        try {
+            this.colonnesDeLaPersonne = (await API.get('/usage/colonnes')).identites || [];
+        } catch (erreur) {
+            this.colonnesDeLaPersonne = [];
+        }
+        this.renderLesColonnesDeLaPersonne();
+    },
+
+    renderLesColonnesDeLaPersonne() {
+        const zone = document.getElementById('cfg-privileged-personne');
+        if (!zone) return;
+        const cochees = new Set(Array.from(zone.querySelectorAll('input:checked'))
+            .map((element) => element.value));
+        zone.innerHTML = this.colonnesDeLaPersonne.length
+            ? this.colonnesDeLaPersonne.map((colonne, rang) => `
+                <label class="chart-option" for="cfg-personne-${rang}">
+                    <input type="checkbox" id="cfg-personne-${rang}" value="${Utils.escapeHtml(colonne)}"
+                           ${cochees.has(colonne) ? 'checked' : ''}>
+                    <span>${Utils.escapeHtml(colonne)}</span>
+                </label>`).join('')
+            : `<p class="form-hint">${Utils.escapeHtml(I18n.t('privileges.mesure.sans_colonne'))}</p>`;
+    },
+
+    /**
+     * Mesure la convention dans les données : les fragments qui distinguent le
+     * second compte d'une même personne, avec leurs preuves.
+     *
+     * Ce qui revient se présente comme une proposition du modèle — à cocher,
+     * puis à reprendre dans le champ, puis à enregistrer — mais rien n'y vient
+     * d'un modèle : ce sont des comptes. Le nombre montré est celui que le
+     * fragment marquerait à la place choisie.
+     */
+    async mesurerLaConvention() {
+        const colonnes = Array.from(document.querySelectorAll(
+            '#cfg-privileged-personne input:checked')).map((element) => element.value);
+        if (!colonnes.length) {
+            Toast.error(I18n.t('common.error'), I18n.t('privileges.mesure.colonnes_requises'));
+            return;
+        }
+        try {
+            this.mesureDeLaConvention = await API.post('/privileges/mesurer', {colonnes});
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+            return;
+        }
+        this.renderLaMesure();
+    },
+
+    renderLaMesure() {
+        const mesure = this.mesureDeLaConvention;
+        const resume = document.getElementById('cfg-privileged-mesure-resume');
+        if (!mesure || !resume) return;
+        resume.innerHTML = `<p class="form-hint">${Utils.escapeHtml(I18n.t(
+            'privileges.mesure.resume', {personnes: Utils.formatNumber(mesure.personnes_a_plusieurs_comptes),
+                                         comptes: Utils.formatNumber(mesure.comptes)}))}</p>`;
+        const place = this.getFieldValue('cfg-privileged-place');
+        this.conventionsProposees = mesure.fragments.map((fragment) => ({
+            fragment: fragment.fragment,
+            comptes: fragment.comptes_par_place[place],
+            motif: I18n.t('privileges.mesure.motif', {
+                groupes: fragment.groupes, sans: fragment.sans_droit_commun,
+                paires: fragment.paires, isoles: fragment.isoles}),
+            exemples: fragment.exemples,
+        }));
+        this.renderLesConventions();
+    },
 
     /**
      * Rend le dénombrement, et distingue les trois façons de ne rien marquer.
@@ -1698,6 +1854,7 @@ const SettingsPage = {
             // le dit, et un champ rempli invite à la relire.
             document.getElementById('modele-cle').value = '';
             this.renderLEtatDuModele(etat);
+            this.signalerLeChangementDAssistance();
             Toast.success(I18n.t('modele.declare'), I18n.t('modele.declare_detail'));
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
@@ -1713,6 +1870,7 @@ const SettingsPage = {
                 if (element) element.value = '';
             });
             this.renderLEtatDuModele(etat);
+            this.signalerLeChangementDAssistance();
             Toast.success(I18n.t('modele.oublie'), I18n.t('modele.oublie_detail'));
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
@@ -1747,6 +1905,7 @@ const SettingsPage = {
         // workspaces portant la même liste n'y marquent pas le même nombre de
         // comptes, et c'est précisément ce que l'écran doit montrer.
         await this.chargerLeDenombrementDesPrivileges();
+        await this.chargerLesColonnesDeLaPersonne();
         // Le découpage des noms de droits : même raison. Une convention se
         // reconnaît à ce qu'elle produit sur **ce** référentiel, pas à ce
         // qu'elle dit.
@@ -1774,12 +1933,34 @@ const SettingsPage = {
         // écrit ici — un plancher inventé côté client écarterait des rôles que
         // le moteur retient.
         this.setFieldValue('cfg-apport-minimal', config.mining_apport_minimal);
+        // La sélection des rôles et son effort. Même règle : rendus tels que
+        // le serveur les applique, sans repli écrit ici.
+        this.setFieldValue('cfg-selection', config.mining_selection);
+        this.setFieldValue('cfg-selection-effort', config.mining_selection_effort);
+        this.setFieldValue('cfg-selection-delai', config.mining_selection_delai_s);
         // Les bornes d'export surveillées. Rendues telles quelles, liste vide
         // comprise : une liste vide éteint le contrôle, et c'est une décision
         // de l'utilisateur — la remplacer par celle du produit reviendrait à
         // rallumer un contrôle qu'il a éteint.
         this.setFieldValue('cfg-troncature-bornes',
                            (config.troncature_bornes || []).join(', '));
+        // Les niveaux de sévérité, un par ligne et du plus grave au moins
+        // grave. Une ligne et non une virgule : un niveau écrit par le client
+        // peut en contenir une.
+        this.setFieldValue('cfg-sod-severites', (config.sod_severites || []).join('\n'));
+        // Les bornes de l'exception assumée : elles existaient dans le document
+        // du workspace sans qu'aucun écran les montre.
+        this.setFieldValue('cfg-derogation-duree', config.derogation_duree_max_jours);
+        this.setFieldValue('cfg-derogation-preavis', config.derogation_preavis_jours);
+        const exige = document.getElementById('cfg-derogation-controle');
+        if (exige) exige.checked = config.derogation_controle_exige === true;
+        const approbation = document.getElementById('cfg-derogation-approbation');
+        if (approbation) approbation.checked = config.derogation_approbation_exigee === true;
+        // Ce que l'apprentissage exige avant de rendre un score : écrit par
+        // le workspace, lu par le serveur, montré ici.
+        this.setFieldValue('cfg-apprentissage-min', config.apprentissage_decisions_min);
+        this.setFieldValue('cfg-apprentissage-verdict', config.apprentissage_par_verdict_min);
+        this.setFieldValue('cfg-apprentissage-regularisation', config.apprentissage_regularisation);
         this.setFieldValue('cfg-health-alert', config.health_threshold_alert);
         this.setFieldValue('cfg-health-critical', config.health_threshold_critical);
 
@@ -2135,10 +2316,31 @@ const SettingsPage = {
                     this.getFieldValue('cfg-max-roles-plafond'), 10),
                 mining_apport_minimal: parseInt(
                     this.getFieldValue('cfg-apport-minimal'), 10),
+                mining_selection: this.getFieldValue('cfg-selection'),
+                mining_selection_effort: parseInt(
+                    this.getFieldValue('cfg-selection-effort'), 10),
+                mining_selection_delai_s: parseFloat(
+                    this.getFieldValue('cfg-selection-delai')),
                 troncature_bornes: Utils.parseCSV(
                     this.getFieldValue('cfg-troncature-bornes'))
                     .map((valeur) => parseInt(valeur, 10))
                     .filter((valeur) => Number.isFinite(valeur)),
+                sod_severites: this.getFieldValue('cfg-sod-severites')
+                    .split('\n').map((niveau) => niveau.trim()).filter(Boolean),
+                derogation_duree_max_jours: parseInt(
+                    this.getFieldValue('cfg-derogation-duree'), 10),
+                derogation_preavis_jours: parseInt(
+                    this.getFieldValue('cfg-derogation-preavis'), 10),
+                derogation_controle_exige:
+                    document.getElementById('cfg-derogation-controle')?.checked === true,
+                derogation_approbation_exigee:
+                    document.getElementById('cfg-derogation-approbation')?.checked === true,
+                apprentissage_decisions_min: parseInt(
+                    this.getFieldValue('cfg-apprentissage-min'), 10),
+                apprentissage_par_verdict_min: parseInt(
+                    this.getFieldValue('cfg-apprentissage-verdict'), 10),
+                apprentissage_regularisation: parseFloat(
+                    this.getFieldValue('cfg-apprentissage-regularisation')),
                 health_threshold_alert: parseFloat(this.getFieldValue('cfg-health-alert')),
                 health_threshold_critical: parseFloat(this.getFieldValue('cfg-health-critical')),
                 sensitive_right_keywords: Utils.parseCSV(

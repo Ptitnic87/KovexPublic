@@ -410,6 +410,7 @@
 
 .mining-role-stats {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-3);
     margin-bottom: var(--space-3);
 }
@@ -839,6 +840,28 @@
     display: flex;
     gap: var(--space-2);
     justify-content: flex-end;
+}
+
+/* Les accès proches : chaque compte est un bouton qui déplie la population
+   en noms. Il se lit comme un nombre souligné, pas comme un bouton plein,
+   pour que le tableau reste un tableau de chiffres. */
+.role-proches {
+    margin-top: var(--space-5);
+}
+
+.role-proches .btn-link {
+    background: transparent;
+    border: none;
+    color: var(--encre-primary);
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+}
+
+.role-proches .btn-link:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 /* ===== Composer ===== */
@@ -2711,6 +2734,41 @@
     margin-bottom: var(--space-2);
 }
 
+/* Les contrôles compensatoires : un bloc par contrôle, séparé comme les
+   règles, et la liste de ce qui l'empêche de compenser. */
+.controle {
+    border-bottom: 1px solid var(--border-secondary);
+    padding-bottom: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.controle:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.controle__raisons {
+    font-size: var(--font-size-sm);
+    color: var(--encre-warning);
+    padding-left: var(--space-5);
+    margin-bottom: var(--space-2);
+}
+
+.controle__execution {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+}
+
+/* Sévérité, processus, propriétaire : sous le titre, en petit, pour que le
+   compte des conflits reste ce qu'on lit en premier. */
+.sod-conflit__qualite {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+}
+
 /* Les rôles qui portent les deux côtés, au-dessus des porteurs : ils ne se
    corrigent pas identité par identité, et les noyer dans la liste ferait
    traiter cent fois un défaut unique. */
@@ -2822,4 +2880,126 @@
     flex-direction: column;
     gap: var(--space-2);
     min-width: 16rem;
+}
+
+
+/* L'usage des droits : la date de mesure en tête, parce que tout le reste en
+   dépend — un export d'avril lu en septembre ne rend pas tout le monde
+   inactif. */
+.usage-reference {
+    font-weight: var(--font-weight-semibold);
+    margin: var(--space-4) 0 var(--space-2);
+}
+
+/* ===== Panneau d'une identité : les constats rassemblés, sans score ===== */
+.identite-constats {
+    margin-bottom: var(--space-5);
+}
+
+.identite-constats__pairs {
+    max-width: 24rem;
+}
+
+.identite-constat {
+    border-top: 1px solid var(--border-secondary);
+    padding: var(--space-3) 0;
+}
+
+.identite-constat h4 {
+    margin: 0 0 var(--space-2);
+    font-weight: var(--font-weight-semibold);
+}
+
+.identite-constat p {
+    margin: 0 0 var(--space-2);
+}
+
+.identite-constat__liste {
+    margin: 0;
+    padding-left: var(--space-5);
+}
+
+.identite-constat__codes {
+    overflow-wrap: anywhere;
+}
+
+/* ===== Explication rédigée d'une règle en conflit ===== */
+.sod-explication {
+    margin-bottom: var(--space-3);
+}
+
+.sod-explication .explication__texte {
+    margin-top: var(--space-2);
+}
+
+/* ===== Ce que le workspace apprend de ses décisions ===== */
+.mining-apprentissage {
+    /* Posée dans la grille des cartes : elle en occupe toute la largeur. */
+    grid-column: 1 / -1;
+    margin-bottom: var(--space-3);
+}
+
+.mining-role-ressemblance__raisons {
+    display: block;
+    flex-basis: 100%;
+    font-size: var(--font-size-xs);
+}
+
+/* ===== La toile d'araignée : la forme d'un candidat, à côté de ses chiffres ===== */
+/* Le score et sa toile prennent leur propre ligne dans la rangée des
+   chiffres : serrés entre deux compteurs, la toile tombait à zéro de large. */
+.mining-role-ressemblance {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+}
+
+.mining-role-toile {
+    display: block;
+    flex-basis: 100%;
+    margin-top: var(--space-2);
+}
+
+.toile {
+    width: 6rem;
+    height: 6rem;
+    max-width: none;
+    flex-shrink: 0;
+}
+
+.toile__cadre {
+    fill: none;
+    stroke: var(--border-secondary);
+}
+
+.toile__axe {
+    stroke: var(--border-secondary);
+}
+
+.toile__reference {
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-dasharray: 3 2;
+}
+
+.toile__candidat {
+    fill: var(--accent-primary);
+    fill-opacity: 0.25;
+    stroke: var(--encre-primary);
+}
+
+.apprentissage-toile {
+    margin: var(--space-3) 0;
+}
+
+.apprentissage-toile .toile {
+    width: 10rem;
+    height: 10rem;
+}
+
+/* ===== La convention des comptes à privilèges, mesurée dans les données ===== */
+.privileges-mesure {
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    margin: var(--space-3) 0;
 }

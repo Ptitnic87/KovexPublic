@@ -69,6 +69,9 @@ const SeparationPage = {
         await this.chargerLesConflits();
     },
 
+    //: Les contrôles compensatoires qu'une dérogation peut citer.
+    controles: [],
+
     brancher() {
         if (this.branche) return;
         this.branche = true;
@@ -147,11 +150,24 @@ const SeparationPage = {
         const conflits = document.getElementById('separation-conflits');
         if (!conflits) return;
         conflits.addEventListener('input', (evenement) => {
-            if (evenement.target.id === 'sod-motif') {
+            if (evenement.target.id === 'sod-motif-refus') {
+                this.motifDeRefus = evenement.target.value;
+            } else if (evenement.target.id === 'sod-motif') {
                 this.motifSaisi = evenement.target.value;
             } else if (evenement.target.id === 'sod-echeance') {
                 this.echeanceSaisie = evenement.target.value;
             }
+        });
+        conflits.addEventListener('change', (evenement) => {
+            if (evenement.target.id === 'sod-controle') {
+                this.controleSaisi = evenement.target.value;
+            }
+        });
+        // Une exécution consignée peut rendre sa couverture à une dérogation,
+        // un contrôle retiré la lui ôter : les conflits se relisent.
+        document.addEventListener('kovex:controles-modifies', async () => {
+            await this.chargerLesConflits();
+            if (this.ouverte) await this.ouvrir(this.ouverte);
         });
         conflits.addEventListener('click', (evenement) => {
             const detail = evenement.target.closest('[data-sod-detail]');
@@ -177,12 +193,86 @@ const SeparationPage = {
                 this.accorder();
                 return;
             }
+            const approuver = evenement.target.closest('[data-sod-approuver]');
+            if (approuver) {
+                evenement.preventDefault();
+                this.trancher(approuver.dataset.sodApprouver, true);
+                return;
+            }
+            const refuser = evenement.target.closest('[data-sod-refuser]');
+            if (refuser) {
+                evenement.preventDefault();
+                this.refusEnCours = refuser.dataset.sodRefuser;
+                this.motifDeRefus = '';
+                this.renderLeDetail();
+                return;
+            }
+            const confirmer = evenement.target.closest('[data-sod-confirmer-refus]');
+            if (confirmer) {
+                evenement.preventDefault();
+                this.trancher(confirmer.dataset.sodConfirmerRefus, false);
+                return;
+            }
             const retirer = evenement.target.closest('[data-sod-retirer-derogation]');
             if (retirer) {
                 evenement.preventDefault();
                 this.retirerLaDerogation(retirer.dataset.sodRetirerDerogation);
+                return;
+            }
+            const expliquer = evenement.target.closest('[data-sod-expliquer]');
+            if (expliquer) {
+                evenement.preventDefault();
+                this.expliquer(expliquer.dataset.sodExpliquer, expliquer);
             }
         });
+    },
+
+    // -- l'explication rédigée ---------------------------------------------
+
+    //: Le paragraphe rédigé pour la règle ouverte, tel que le serveur l'a
+    //  contrôlé. Effacé à chaque relecture du détail : il cite des comptes,
+    //  et des comptes qui ont changé le rendraient faux.
+    explication: null,
+
+    /**
+     * Fait rédiger le paragraphe qui explique la règle en conflit.
+     *
+     * Seule la règle part de l'écran : le serveur relit les comptes et les
+     * libellés, et refuse une phrase qui inventerait un nombre. Aucune
+     * identité ne quitte la machine, quelle que soit la configuration.
+     */
+    async expliquer(regle, bouton) {
+        const libelle = bouton.innerHTML;
+        bouton.innerHTML = `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i> ${
+            Utils.escapeHtml(I18n.t('annotator.asking'))}`;
+        bouton.disabled = true;
+        try {
+            const rendu = await API.post('/assistance/explication-de-conflit', {
+                regle, locale: I18n.currentLocale,
+            });
+            this.explication = {regle, texte: rendu.explication, modele: rendu.modele};
+            this.renderLeDetail();
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'),
+                        erreur.message || I18n.t('annotator.unavailable'));
+            bouton.innerHTML = libelle;
+            bouton.disabled = false;
+        }
+    },
+
+    renderLExplication(regle) {
+        const explication = this.explication && this.explication.regle === regle
+            ? this.explication : null;
+        return `<div class="sod-explication">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        data-sod-expliquer="${Utils.escapeHtml(regle)}">
+                    <i class="fas fa-pen-nib" aria-hidden="true"></i> ${
+                        Utils.escapeHtml(I18n.t('separation.explain'))}</button>
+                ${explication ? `
+                    <p class="form-hint">${Utils.escapeHtml(I18n.t('separation.explain.hint',
+                                                                   {modele: explication.modele}))}</p>
+                    <p class="explication__texte">${Utils.escapeHtml(explication.texte)}</p>` : ''}
+            </div>`;
     },
 
     // -- l'exception assumée -----------------------------------------------
@@ -193,6 +283,7 @@ const SeparationPage = {
     acceptation: '',
     motifSaisi: '',
     echeanceSaisie: '',
+    controleSaisi: '',
     //: Les bornes du workspace, rendues par le serveur. L'écran s'en sert pour
     //  refuser **avant** la saisie plutôt qu'après.
     bornes: null,
@@ -201,6 +292,7 @@ const SeparationPage = {
         this.acceptation = `${regle}--${identite}`;
         this.motifSaisi = '';
         this.echeanceSaisie = '';
+        this.controleSaisi = '';
         this.renderLeDetail();
         const motif = document.getElementById('sod-motif');
         if (motif) motif.focus();
@@ -220,6 +312,7 @@ const SeparationPage = {
                 cible: {regle, identite},
                 motif: this.motifSaisi,
                 echeance: this.echeanceSaisie,
+                controle: this.controleSaisi,
             });
         } catch (erreur) {
             // Le serveur rend un refus structuré : le message se compose ici,
@@ -258,12 +351,18 @@ const SeparationPage = {
     async charger() {
         try {
             const rendu = await API.get('/separation/regles');
+            // Les niveaux viennent du workspace, dans les mots du client : le
+            // produit n'en livre aucun, et n'en traduit aucun.
+            this.severites = (rendu.severites || []).map(String);
             this.regles = (rendu.regles || []).map((regle) => ({
                 id: String(regle.id || ''),
                 libelle: String(regle.libelle || ''),
                 gauche: this.lireLeCote(regle.gauche),
                 droite: this.lireLeCote(regle.droite),
                 active: regle.active !== false,
+                severite: String(regle.severite || ''),
+                processus: String(regle.processus || ''),
+                proprietaire: String(regle.proprietaire || ''),
             }));
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
@@ -286,6 +385,11 @@ const SeparationPage = {
             this.bornes = await API.get('/derogations');
         } catch (erreur) {
             this.bornes = null;
+        }
+        try {
+            this.controles = (await API.get('/controles')).controles || [];
+        } catch (erreur) {
+            this.controles = [];
         }
         this.renderLesConflits();
     },
@@ -317,7 +421,8 @@ const SeparationPage = {
 
     ajouterUneRegle(gauche = [], droite = []) {
         this.regles.push({id: this.nouvelIdentifiant(), libelle: '',
-                          gauche, droite, active: true});
+                          gauche, droite, active: true,
+                          severite: '', processus: '', proprietaire: ''});
         this.selecteur = null;
         this.renderLesRegles();
     },
@@ -390,6 +495,7 @@ const SeparationPage = {
                     ${this.renderLeCote(regle, 'gauche')}
                     ${this.renderLeCote(regle, 'droite')}
                 </div>
+                ${this.renderLaQualification(regle)}
                 <div class="form-actions">
                     <label class="chart-option" for="sod-actif-${Utils.escapeHtml(regle.id)}">
                         <input type="checkbox" id="sod-actif-${Utils.escapeHtml(regle.id)}"
@@ -406,6 +512,52 @@ const SeparationPage = {
                 ${regle.active ? '' : `<p class="form-hint">${
                     Utils.escapeHtml(I18n.t('separation.rule.suspended'))}</p>`}
             </div>`).join('');
+    },
+
+    /**
+     * Sévérité, processus, propriétaire : ce qui fait d'une règle un risque.
+     *
+     * Sans sévérité, quarante conflits se lisent tous pareil ; sans
+     * propriétaire, personne ne répond du risque. Les niveaux sont ceux du
+     * workspace ; tant qu'il n'en déclare aucun, l'écran dit où les écrire
+     * plutôt que de proposer une échelle que personne n'a décidée.
+     */
+    renderLaQualification(regle) {
+        const id = Utils.escapeHtml(regle.id);
+        const champ = (nom, cle) => `
+            <div class="form-group">
+                <label class="form-label" for="sod-${nom}-${id}"
+                       >${Utils.escapeHtml(I18n.t(cle))}</label>
+                <input type="text" class="form-input" id="sod-${nom}-${id}"
+                       data-sod-regle="${id}" data-sod-champ="${nom}"
+                       maxlength="200" value="${Utils.escapeHtml(regle[nom])}">
+            </div>`;
+        const niveaux = this.severites || [];
+        // Un niveau retiré de la liste depuis l'enregistrement reste montré :
+        // le faire disparaître du menu changerait la règle sans qu'on y touche.
+        const proposes = regle.severite && !niveaux.includes(regle.severite)
+            ? [...niveaux, regle.severite] : niveaux;
+        const severite = niveaux.length || regle.severite ? `
+            <div class="form-group">
+                <label class="form-label" for="sod-severite-${id}"
+                       >${Utils.escapeHtml(I18n.t('separation.rule.severity'))}</label>
+                <select class="form-input" id="sod-severite-${id}"
+                        data-sod-regle="${id}" data-sod-champ="severite">
+                    <option value="">${Utils.escapeHtml(
+                        I18n.t('separation.rule.severity_none'))}</option>
+                    ${proposes.map((niveau) => `<option value="${Utils.escapeHtml(niveau)}"
+                        ${niveau === regle.severite ? 'selected' : ''}>${
+                        Utils.escapeHtml(niveau)}</option>`).join('')}
+                </select>
+            </div>` : `
+            <p class="form-hint">${Utils.escapeHtml(
+                I18n.t('separation.rule.severity_undeclared'))}</p>`;
+        return `
+            <div class="form-row">
+                ${severite}
+                ${champ('processus', 'separation.rule.process')}
+                ${champ('proprietaire', 'separation.rule.owner')}
+            </div>`;
     },
 
     /**
@@ -644,6 +796,9 @@ const SeparationPage = {
             droite: regle.droite.map((reference) => ({type: reference.type,
                                                       id: reference.id})),
             active: regle.active,
+            severite: regle.severite,
+            processus: regle.processus,
+            proprietaire: regle.proprietaire,
         }));
         try {
             await API.put('/separation/regles', {regles: envoi});
@@ -694,17 +849,27 @@ const SeparationPage = {
             // Un seul total ferait croire qu'il reste tout à faire, ou
             // cacherait à un auditeur ce qui a été assumé.
             const derogees = rendu.identites_derogees || 0;
+            const orphelines = rendu.regles_sans_proprietaire || 0;
             total.textContent = [
                 I18n.t('separation.conflicts.count', {
                     identites: Utils.formatNumber(rendu.identites_en_conflit),
                     population: Utils.formatNumber(rendu.population)}),
                 derogees ? I18n.t('separation.conflicts.derogated',
                                   {derogees: Utils.formatNumber(derogees)}) : '',
+                // Un défaut du programme lui-même, pas d'une habilitation :
+                // personne n'est là pour répondre de ces risques.
+                orphelines ? I18n.t('separation.conflicts.without_owner',
+                                    {regles: Utils.formatNumber(orphelines)}) : '',
+                rendu.derogations_en_attente ? I18n.t('separation.conflicts.pending', {
+                    derogations: Utils.formatNumber(rendu.derogations_en_attente)}) : '',
+                rendu.regles_suspendues ? I18n.t('separation.conflicts.suspended', {
+                    regles: Utils.formatNumber(rendu.regles_suspendues)}) : '',
             ].filter(Boolean).join(' · ');
         }
         zone.innerHTML = rendu.regles.map((ligne) => `
             <div class="sod-conflit">
                 <h3 class="sod-conflit__titre">${Utils.escapeHtml(ligne.libelle)}</h3>
+                ${this.renderLaQualite(ligne)}
                 ${this.renderLInapplicable(ligne)}
                 ${ligne.identites ? `
                     <p>${Utils.escapeHtml(I18n.t('separation.conflicts.by_roles', {
@@ -727,6 +892,28 @@ const SeparationPage = {
                 <div id="sod-detail-${Utils.escapeHtml(ligne.regle)}"></div>
             </div>`).join('');
         if (this.ouverte) this.renderLeDetail();
+    },
+
+    /**
+     * Ce qui qualifie le risque, sous le titre du conflit.
+     *
+     * Chaque absence est dite : une règle sans sévérité n'est pas une règle
+     * mineure, et une règle sans propriétaire est un risque dont personne ne
+     * répond.
+     */
+    renderLaQualite(ligne) {
+        const morceaux = [
+            ligne.severite
+                ? I18n.t('separation.conflicts.severity', {severite: ligne.severite})
+                : I18n.t('separation.conflicts.no_severity'),
+            ligne.processus
+                ? I18n.t('separation.conflicts.process', {processus: ligne.processus})
+                : '',
+            ligne.proprietaire
+                ? I18n.t('separation.conflicts.owner', {proprietaire: ligne.proprietaire})
+                : I18n.t('separation.conflicts.no_owner'),
+        ].filter(Boolean);
+        return `<p class="sod-conflit__qualite">${Utils.escapeHtml(morceaux.join(' · '))}</p>`;
     },
 
     /**
@@ -762,6 +949,7 @@ const SeparationPage = {
 
     async ouvrir(identifiant) {
         this.ouverte = identifiant;
+        this.explication = null;
         try {
             this.detail = await API.get(
                 `/separation/conflits/${encodeURIComponent(identifiant)}`);
@@ -789,6 +977,7 @@ const SeparationPage = {
             .map((nom) => nom === 'hors_role'
                 ? I18n.t('separation.origin.hors_role') : nom).join(', ');
         zone.innerHTML = `
+            ${detail.identites ? this.renderLExplication(detail.regle) : ''}
             ${(detail.roles || []).length ? `
                 <ul class="sod-roles">${detail.roles.map((role) => `
                     <li><strong>${Utils.escapeHtml(role.role || role.role_id)}</strong>
@@ -855,13 +1044,31 @@ const SeparationPage = {
     renderLaDerogation(regle, ligne) {
         const derogation = ligne.derogation;
         const cle = `${regle}--${ligne.identite}`;
+        const inoperante = ligne.derogation_inoperante;
+        if (!derogation && inoperante) {
+            // Accordée, en cours, et sans effet : le conflit est revenu. Le
+            // dire, et dire pourquoi — sans quoi l'auditeur lit « non traité »
+            // là où une décision existe et a cessé de valoir.
+            const enAttente = inoperante.statut === 'demandee';
+            return `
+                <span class="badge badge-warning">${Utils.escapeHtml(
+                    I18n.t(enAttente ? 'derogation.pending' : 'derogation.inoperative'))}</span>
+                <ul class="controle__raisons">${(inoperante.raisons || []).map((raison) => `
+                    <li>${Utils.escapeHtml(I18n.t(`derogation.raison.${raison.code}`,
+                                                  raison.params || {}))}</li>`).join('')}</ul>
+                ${enAttente ? this.renderLaDecision(inoperante) : ''}
+                <button type="button" class="btn btn-secondary btn-sm"
+                        data-sod-retirer-derogation="${Utils.escapeHtml(inoperante.id)}">
+                    ${Utils.escapeHtml(I18n.t('derogation.revoke'))}
+                </button>`;
+        }
         if (derogation) {
             return `
                 <span class="badge badge-neutral">${Utils.escapeHtml(
                     I18n.t('derogation.until',
                            {echeance: derogation.echeance}))}</span>
                 <span class="form-hint">${Utils.escapeHtml(
-                    [derogation.motif, derogation.auteur]
+                    [derogation.motif, derogation.auteur, this.libelleDuControle(derogation.controle)]
                         .filter(Boolean).join(' — '))}</span>
                 <button type="button" class="btn btn-secondary btn-sm"
                         data-sod-retirer-derogation="${Utils.escapeHtml(derogation.id)}">
@@ -906,6 +1113,7 @@ const SeparationPage = {
                 <span class="form-hint">${Utils.escapeHtml(
                     I18n.t('derogation.deadline.hint',
                            {jours: bornes.duree_max_jours || 0}))}</span>
+                ${this.renderLeChoixDuControle()}
                 <div class="form-actions">
                     <button type="button" class="btn btn-primary btn-sm"
                             data-sod-valider-derogation="1">
@@ -917,6 +1125,90 @@ const SeparationPage = {
                     </button>
                 </div>
             </div>`;
+    },
+
+    /**
+     * Le contrôle compensatoire que la dérogation citera.
+     *
+     * Facultatif, sauf si le workspace l'exige — l'écran le dit alors, parce
+     * qu'une dérogation accordée sans contrôle y serait enregistrée mais ne
+     * couvrirait rien.
+     */
+    renderLeChoixDuControle() {
+        const exige = (this.bornes || {}).controle_exige === true;
+        return `
+            <label class="form-label" for="sod-controle">${
+                Utils.escapeHtml(I18n.t('derogation.control'))}</label>
+            <select class="form-input" id="sod-controle">
+                <option value="">${Utils.escapeHtml(I18n.t('derogation.control.none'))}</option>
+                ${this.controles.map((controle) => `<option value="${Utils.escapeHtml(controle.id)}"
+                    ${controle.id === this.controleSaisi ? 'selected' : ''}>${
+                    Utils.escapeHtml(controle.libelle)}</option>`).join('')}
+            </select>
+            ${exige ? `<span class="form-hint">${Utils.escapeHtml(
+                I18n.t('derogation.control.required'))}</span>` : ''}`;
+    },
+
+    //: La dérogation dont le refus est en cours de saisie. Un refus a un
+    //  motif : il se saisit avant de partir.
+    refusEnCours: '',
+    motifDeRefus: '',
+
+    /**
+     * Approuver ou refuser une dérogation demandée.
+     *
+     * Le serveur refuse que ce soit celui qui l'a demandée : une exception
+     * approuvée par la personne qui en profite ne sépare rien. L'écran ne le
+     * cache pas pour autant — le refus du serveur dit pourquoi, et c'est plus
+     * juste qu'un bouton qui disparaît sans explication.
+     */
+    renderLaDecision(derogation) {
+        const id = Utils.escapeHtml(derogation.id);
+        if (this.refusEnCours === derogation.id) {
+            // La même boîte que l'acceptation : empilée, d'une largeur
+            // minimale, pour que le champ ne déborde pas sur la cellule voisine.
+            return `
+                <div class="sod-acceptation">
+                    <label class="form-label" for="sod-motif-refus">${
+                        Utils.escapeHtml(I18n.t('derogation.refusal_reason'))}</label>
+                    <input type="text" class="form-input" id="sod-motif-refus" maxlength="500"
+                           value="${Utils.escapeHtml(this.motifDeRefus)}">
+                    <button type="button" class="btn btn-danger btn-sm"
+                            data-sod-confirmer-refus="${id}">${
+                        Utils.escapeHtml(I18n.t('derogation.refuse'))}</button>
+                </div>`;
+        }
+        return `
+            <button type="button" class="btn btn-primary btn-sm"
+                    data-sod-approuver="${id}">${Utils.escapeHtml(I18n.t('derogation.approve'))}</button>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    data-sod-refuser="${id}">${Utils.escapeHtml(I18n.t('derogation.refuse'))}</button>`;
+    },
+
+    async trancher(identifiant, accorder) {
+        try {
+            if (accorder) {
+                await API.post(`/derogations/${encodeURIComponent(identifiant)}/approuver`, {});
+            } else {
+                await API.post(`/derogations/${encodeURIComponent(identifiant)}/refuser`,
+                               {motif: this.motifDeRefus});
+            }
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+            return;
+        }
+        Toast.success(I18n.t('common.success'),
+                      I18n.t(accorder ? 'derogation.approved' : 'derogation.refused'));
+        this.refusEnCours = '';
+        this.motifDeRefus = '';
+        await this.rafraichirApresDerogation(this.ouverte);
+    },
+
+    /** Le libellé d'un contrôle cité, ou rien. */
+    libelleDuControle(identifiant) {
+        if (!identifiant) return '';
+        const controle = this.controles.find((candidat) => candidat.id === identifiant);
+        return I18n.t('derogation.control.cited', {controle: controle ? controle.libelle : identifiant});
     },
 
     /** La date la plus lointaine que le workspace autorise. */

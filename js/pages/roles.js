@@ -131,6 +131,11 @@ const RolesPage = {
                 if (bouton.id === 'role-detail-ia') this.proposerUnNom();
                 if (bouton.id === 'role-detail-renommer') this.renommerLeRole();
                 if (bouton.id === 'role-detail-devalider') this.devaliderLeRole();
+                if (bouton.id === 'role-proches-calculer') this.chercherLesAccesProches();
+                if (bouton.dataset.prochesDroit) {
+                    this.montrerLaPopulation(bouton.dataset.prochesDroit,
+                                             bouton.dataset.prochesPopulation);
+                }
             });
         }
 
@@ -570,6 +575,7 @@ const RolesPage = {
             </div>`;
         Modal.open('role-detail-modal');
         this.detail = {roleId};
+        this.effacerLesAccesProches();
         this.chargerLesPorteurs(roleId);
         await this.chargerLeDetail();
     },
@@ -620,6 +626,11 @@ const RolesPage = {
         // pire qu'un bouton absent.
         const sortir = document.getElementById('role-detail-devalider');
         if (sortir) sortir.hidden = socle;
+        // Le socle est détenu par tous : ses « accès proches » seraient ceux
+        // de toute la population, et la question d'y faire entrer un accès ne
+        // se pose pas — le socle se règle par sa détection.
+        const proches = document.getElementById('role-proches');
+        if (proches) proches.hidden = socle;
 
         contenu.innerHTML = `
             <div class="role-detail-mesures">
@@ -753,6 +764,130 @@ const RolesPage = {
         return Number.isNaN(date.getTime())
             ? String(iso)
             : date.toLocaleDateString(I18n.currentLocale || undefined);
+    },
+
+    /**
+     * Oublie les accès proches du rôle précédent.
+     *
+     * La fenêtre sert à tous les rôles : sans cela, les voisins d'un rôle
+     * s'afficheraient sous le nom du suivant.
+     */
+    effacerLesAccesProches() {
+        const resume = document.getElementById('role-proches-resume');
+        if (resume) { resume.hidden = true; resume.textContent = ''; }
+        const resultats = document.getElementById('role-proches-resultats');
+        if (resultats) resultats.innerHTML = '';
+        const population = document.getElementById('role-proches-population');
+        if (population) population.hidden = true;
+    },
+
+    /**
+     * Les accès hors du rôle les plus proches de sa population.
+     *
+     * Rien n'est calculé tant que la ressemblance minimale et le nombre
+     * d'accès ne sont pas saisis : le produit ne décide pas à partir de quand
+     * deux populations se ressemblent.
+     */
+    async chercherLesAccesProches() {
+        const etat = this.detail;
+        if (!etat) return;
+        const jaccard = parseFloat(document.getElementById('role-proches-jaccard')?.value);
+        const limite = parseInt(document.getElementById('role-proches-limite')?.value, 10);
+        const resume = document.getElementById('role-proches-resume');
+        const resultats = document.getElementById('role-proches-resultats');
+        if (!Number.isFinite(jaccard) || jaccard < 0 || jaccard > 1
+            || !Number.isFinite(limite) || limite < 1) {
+            Toast.error(I18n.t('common.error'), I18n.t('role.proches.saisie_requise'));
+            return;
+        }
+        this.effacerLesAccesProches();
+        try {
+            const reponse = await API.get(
+                `/kb/validated-roles/${encodeURIComponent(etat.roleId)}/acces-proches`,
+                {jaccard_min: jaccard, limite});
+            etat.proches = reponse;
+            if (resume) {
+                resume.hidden = false;
+                resume.textContent = reponse.acces.length
+                    ? I18n.t('role.proches.resume', {
+                        montres: Utils.formatNumber(reponse.acces.length),
+                        candidats: Utils.formatNumber(reponse.candidats),
+                        sous_le_seuil: Utils.formatNumber(reponse.sous_le_seuil),
+                        au_dela: Utils.formatNumber(reponse.au_dela_de_la_limite),
+                    })
+                    : I18n.t('role.proches.aucun', {
+                        candidats: Utils.formatNumber(reponse.candidats)});
+            }
+            if (resultats && reponse.acces.length) {
+                resultats.innerHTML = this.tableauDesAccesProches(reponse.acces);
+            }
+        } catch (erreur) {
+            Toast.error(I18n.t('common.error'), erreur.message);
+        }
+    },
+
+    /** Les trois populations de chaque accès : des comptes qui se déplient. */
+    tableauDesAccesProches(acces) {
+        const populations = ['avec_le_role', 'hors_du_role', 'sans_l_acces'];
+        return `
+            <table class="role-detail-table">
+                <thead><tr>
+                    <th scope="col">${Utils.escapeHtml(I18n.t('role.proches.colonne.droit'))}</th>
+                    <th scope="col">${Utils.escapeHtml(I18n.t('role.proches.colonne.jaccard'))}</th>
+                    ${populations.map(code => `<th scope="col">${Utils.escapeHtml(
+                        I18n.t(`role.proches.population.${code}`))}</th>`).join('')}
+                </tr></thead>
+                <tbody>${acces.map(ligne => `
+                    <tr>
+                        <td>${Utils.escapeHtml(ligne.droit)}</td>
+                        <td>${Utils.escapeHtml(Utils.formatNumber(ligne.jaccard))}</td>
+                        ${populations.map(code => `<td><button type="button"
+                                class="btn btn-sm btn-link"
+                                data-proches-droit="${Utils.escapeHtml(ligne.droit)}"
+                                data-proches-population="${code}">${
+                                Utils.escapeHtml(Utils.formatNumber(ligne[code]))}</button></td>`).join('')}
+                    </tr>
+                `).join('')}</tbody>
+            </table>`;
+    },
+
+    /** Le tableau d'une population, construit une fois pour toutes les fenêtres. */
+    tableauDeLaPopulation: null,
+
+    /** L'une des trois populations d'un couple (rôle, accès), nommée. */
+    montrerLaPopulation(droit, population) {
+        const etat = this.detail;
+        if (!etat) return;
+        etat.population = {droit, population};
+        const zone = document.getElementById('role-proches-population');
+        if (zone) zone.hidden = false;
+        const titre = document.getElementById('role-proches-population-titre');
+        if (titre) {
+            titre.textContent = I18n.t('role.proches.population_titre', {
+                population: I18n.t(`role.proches.population.${population}`), droit});
+        }
+        if (!this.tableauDeLaPopulation) {
+            this.tableauDeLaPopulation = new DataTable({
+                type: 'validation-identities',
+                endpoint: '',
+                theadId: 'role-proches-pop-thead',
+                tbodyId: 'role-proches-pop-list',
+                searchId: 'role-proches-pop-search',
+                countId: 'role-proches-pop-count',
+                paginationPrefix: 'role-proches-pop',
+                pageSize: this.PORTEURS_PAR_PAGE,
+                detail: false,
+                parametres: () => Object.assign({}, this.detail.population),
+            });
+        }
+        const tableau = this.tableauDeLaPopulation;
+        tableau.endpoint =
+            `/kb/validated-roles/${encodeURIComponent(etat.roleId)}/acces-proches/population`;
+        tableau.state.page = 1;
+        tableau.state.search = '';
+        const recherche = document.getElementById(tableau.searchId);
+        if (recherche) recherche.value = '';
+        return tableau.load();
     },
 
     /** Lignes de porteurs par page. Une fenêtre en montre moins qu'un écran. */

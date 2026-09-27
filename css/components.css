@@ -124,6 +124,11 @@
 .card-title i { color: var(--encre-primary); }
 .card-body { padding: var(--space-5); }
 
+/* Deux cartes qui se suivent directement dans une page se séparent. Elles se
+   touchaient sur la séparation des tâches, les conflits et l'export du
+   modèle — les trois seuls écrans où deux cartes se suivent sans conteneur. */
+.page > .card + .card { margin-top: var(--space-5); }
+
 /* ===== Forms ===== */
 .form-group { margin-bottom: var(--space-4); }
 
@@ -177,6 +182,13 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
     gap: var(--space-4);
+}
+
+/* Un libellé posé directement dans la rangée, à côté de son champ : centré
+   sur lui, et non collé en haut d'une case plus haute que lui. */
+.form-row > .form-label {
+    align-self: center;
+    margin-bottom: 0;
 }
 
 .select-wrapper { position: relative; }
@@ -289,6 +301,10 @@
 }
 
 .data-table th:hover { background: var(--bg-hover); }
+
+/* La colonne de sélection ne trie rien : ni curseur de lien, ni survol. */
+.data-table th.colonne-selection { cursor: default; }
+.data-table th.colonne-selection:hover { background: var(--table-header-bg); }
 .data-table th.sorted { color: var(--encre-primary); }
 
 .data-table td {
@@ -1107,25 +1123,57 @@
    teinte du bandeau de type les distingue, et elle vient du thème.
    =========================================================================== */
 
-.modal--role-validation {
-    max-width: 900px;
-    max-height: 90vh;
+/* La fenêtre prend la largeur de l'écran, à une marge près. Bornée à
+   900 px, elle laissait au tableau des identités la place de trois colonnes,
+   et c'est la colonne de gauche qui cédait : le nom et la description du rôle
+   tombaient à cent vingt pixels, illisibles. */
+.modal-overlay .modal.modal--role-validation {
+    width: min(1440px, 96vw);
+    max-width: min(1440px, 96vw);
+    max-height: 92vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
 }
 
+/* La colonne de gauche a un plancher ; celle de droite prend le reste et ne
+   pousse jamais la première. `minmax(0, …)` est ce qui interdit au tableau
+   d'élargir sa colonne : il défile dans sa zone au lieu de repousser le
+   formulaire. */
 .role-validation {
     display: grid;
-    grid-template-columns: 1fr 1.5fr;
+    grid-template-columns: minmax(18rem, 1fr) minmax(0, 2.4fr);
     gap: var(--space-6);
     overflow-y: auto;
     flex: 1;
 }
 
-@media (max-width: 860px) {
-    .role-validation { grid-template-columns: 1fr; }
+.role-validation > * { min-width: 0; }
+
+@media (max-width: 960px) {
+    .role-validation { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Le tableau d'un onglet défile dans sa propre zone. C'est ce qui garde son
+   en-tête en vue : une cellule collante colle à la zone qui défile, et c'est
+   la fenêtre entière qui défilait. */
+.role-validation .table-wrapper {
+    max-height: min(52vh, 34rem);
+}
+
+/* La barre d'outils d'un onglet : recherche, choix des colonnes, retour au
+   tri d'origine, sur une ligne. */
+.role-validation__outils {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.role-validation__outils .form-input { flex: 1; min-width: 0; }
+
+/* Le diagnostic : le texte ne colle plus au bord de son cadre. */
+.scroll-pane--aere { padding: var(--space-4) var(--space-5); }
 
 .role-validation__note {
     padding: var(--space-3);
@@ -1333,6 +1381,7 @@
    =========================================================================== */
 
 .alert {
+    margin-bottom: var(--space-4);
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
@@ -1396,7 +1445,15 @@
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+    /* Une rangée de boutons ne touche ni ce qui la précède ni ce qu'elle
+       produit : le bouton « Sauvegarder » collé au bloc suivant, celui de
+       détection collé au champ d'après, étaient le même défaut. */
+    margin-block: var(--space-4);
 }
+
+/* Une case à cocher posée parmi des boutons s'aligne sur eux : sa marge du
+   bas, utile en colonne, la décalait vers le haut. */
+.form-actions > .chart-option { margin-bottom: 0; }
 
 .table-filters {
     display: flex;
@@ -1572,7 +1629,8 @@
 .explication__diagnostic {
     list-style: none;
     padding: 0;
-    margin: 0;
+    /* Ce qui suit la liste — le nom proposé par un modèle — s'en détache. */
+    margin: 0 0 var(--space-5);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -1728,3 +1786,6 @@
 .champ-secret {
     -webkit-text-security: disc;
 }
+
+/* Un tableau dans une fenêtre défile dans sa zone, en-tête en vue. */
+.table-wrapper--fenetre { max-height: min(56vh, 36rem); }

@@ -139,7 +139,9 @@ const DashboardPage = {
         };
         const severite = severites[statusKey] || null;
 
-        if (scoreEl) scoreEl.textContent = score !== undefined && score !== null ? Math.round(score) : '-';
+        // Par défaut, jamais au plus proche : 99,8 affiché « 100 » faisait
+        // lire un jeu parfait là où le serveur comptait des anomalies.
+        if (scoreEl) scoreEl.textContent = score !== undefined && score !== null ? Math.floor(score) : '-';
 
         if (statusEl) {
             statusEl.textContent = statusKey ? I18n.t(statusKey) : I18n.t('common.unknown');

@@ -18,6 +18,10 @@ const Toile = {
     //  rayon de l'axe à 100. La taille affichée vient de la feuille de style.
     CENTRE: 50,
     RAYON: 42,
+    //: Les anneaux intermédiaires, en valeur d'axe. Sans eux, un candidat
+    //  proche de 100 sur tous les axes se confondait avec le cadre : rien ne
+    //  disait où finissait l'un et où commençait l'autre.
+    GRADUATIONS: [25, 50, 75],
 
     coordonnees(rang, total, valeur) {
         const angle = -Math.PI / 2 + (2 * Math.PI * rang) / total;
@@ -50,14 +54,25 @@ const Toile = {
             return `<line class="toile__axe" x1="${Toile.CENTRE}" y1="${Toile.CENTRE}"
                 x2="${x}" y2="${y}"></line>`;
         }).join('');
-        const plein = Object.fromEntries(axes.map((axe) => [axe, 100]));
+        const anneau = (valeur) => Toile.polygone(
+            axes, Object.fromEntries(axes.map((axe) => [axe, valeur])));
+        const graduations = Toile.GRADUATIONS.map((valeur) =>
+            `<polygon class="toile__graduation" points="${anneau(valeur)}"></polygon>`).join('');
+        // Les sommets du candidat sont marqués : sur le cadre ou sur un
+        // anneau, un point reste lisible là où deux traits se superposent.
+        const sommets = axes.map((axe, rang) => {
+            const [x, y] = Toile.coordonnees(rang, axes.length, candidat[axe]);
+            return `<circle class="toile__sommet" cx="${x}" cy="${y}"></circle>`;
+        }).join('');
         return `<svg class="toile" viewBox="0 0 100 100" role="img" aria-label="${description}">
                 <title>${description}</title>
-                <polygon class="toile__cadre" points="${Toile.polygone(axes, plein)}"></polygon>
+                <polygon class="toile__cadre" points="${anneau(100)}"></polygon>
+                ${graduations}
                 ${rayons}
                 ${reference ? `<polygon class="toile__reference" points="${
                     Toile.polygone(axes, reference)}"></polygon>` : ''}
                 <polygon class="toile__candidat" points="${Toile.polygone(axes, candidat)}"></polygon>
+                ${sommets}
             </svg>`;
     },
 };

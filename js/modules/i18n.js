@@ -163,10 +163,21 @@ const I18n = {
             if (el.children.length === 0 || el.dataset.i18nTextOnly === 'true') {
                 el.textContent = translation;
             } else {
-                // Pour les éléments avec des icônes, etc., remplacer seulement le texte
-                const textNodes = Array.from(el.childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
-                if (textNodes.length > 0) {
-                    textNodes[0].textContent = translation;
+                // Élément avec une icône : seul le libellé change. Le premier
+                // nœud texte est souvent l'indentation qui précède l'icône ;
+                // y écrire la traduction laissait le libellé d'origine à la
+                // suite, et le titre s'affichait deux fois (« Créer un Nouveau
+                // Workspace ⊕ Nouveau Workspace »). On vise donc le premier
+                // nœud qui porte du texte, et on vide les suivants.
+                const pleins = Array.from(el.childNodes).filter(node =>
+                    node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '');
+                if (pleins.length > 0) {
+                    // Les blancs autour du libellé séparent l'icône et ce
+                    // qui suit : ils restent.
+                    const brut = pleins[0].textContent;
+                    pleins[0].textContent = brut.match(/^\s*/)[0] + translation
+                        + brut.match(/\s*$/)[0];
+                    pleins.slice(1).forEach(node => { node.textContent = ''; });
                 }
             }
         });
@@ -186,10 +197,21 @@ const I18n = {
             if (el.children.length === 0 || el.dataset.i18nTextOnly === 'true') {
                 el.textContent = translation;
             } else {
-                // Pour les éléments avec des icônes, etc., remplacer seulement le texte
-                const textNodes = Array.from(el.childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
-                if (textNodes.length > 0) {
-                    textNodes[0].textContent = translation;
+                // Élément avec une icône : seul le libellé change. Le premier
+                // nœud texte est souvent l'indentation qui précède l'icône ;
+                // y écrire la traduction laissait le libellé d'origine à la
+                // suite, et le titre s'affichait deux fois (« Créer un Nouveau
+                // Workspace ⊕ Nouveau Workspace »). On vise donc le premier
+                // nœud qui porte du texte, et on vide les suivants.
+                const pleins = Array.from(el.childNodes).filter(node =>
+                    node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '');
+                if (pleins.length > 0) {
+                    // Les blancs autour du libellé séparent l'icône et ce
+                    // qui suit : ils restent.
+                    const brut = pleins[0].textContent;
+                    pleins[0].textContent = brut.match(/^\s*/)[0] + translation
+                        + brut.match(/\s*$/)[0];
+                    pleins.slice(1).forEach(node => { node.textContent = ''; });
                 }
             }
         });

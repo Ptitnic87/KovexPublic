@@ -973,9 +973,13 @@ const SeparationPage = {
         if (!detail) return;
         const zone = document.getElementById(`sod-detail-${detail.regle}`);
         if (!zone) return;
+        // Le serveur rend des identifiants de rôle, et leurs noms à part : un
+        // rôle sans nom connu garde son identifiant plutôt que de disparaître.
+        const noms = detail.noms_des_roles || {};
         const origine = (origines) => (origines || [])
-            .map((nom) => nom === 'hors_role'
-                ? I18n.t('separation.origin.hors_role') : nom).join(', ');
+            .map((identifiant) => identifiant === 'hors_role'
+                ? I18n.t('separation.origin.hors_role')
+                : noms[identifiant] || identifiant).join(', ');
         zone.innerHTML = `
             ${detail.identites ? this.renderLExplication(detail.regle) : ''}
             ${(detail.roles || []).length ? `

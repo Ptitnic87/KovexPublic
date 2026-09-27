@@ -1112,7 +1112,7 @@ const RolesPage = {
                 <label class="composer-item ${isSelected ? 'selected' : ''}">
                     <input 
                         type="checkbox" 
-                        value="${role.id}"
+                        value="${Utils.escapeHtml(role.id)}"
                         ${isSelected ? 'checked' : ''}
                         data-role-toggle="${Utils.escapeHtml(role.id)}"
                     >

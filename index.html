@@ -871,6 +871,14 @@
                                                        data-generateur checked>
                                                 <span data-i18n-key="mining.generateur.intersection"></span>
                                             </label>
+                                            <!-- Décochée : le treillis ne change le résultat que sur
+                                                 une donnée propre, et multiplie le calcul ailleurs.
+                                                 C'est un choix de l'utilisateur. -->
+                                            <label class="form-check">
+                                                <input type="checkbox" value="treillis"
+                                                       data-generateur>
+                                                <span data-i18n-key="mining.generateur.treillis"></span>
+                                            </label>
                                         </fieldset>
                                         <!-- Exploration du seuil : aucune valeur par défaut, l'intervalle
                                              et le pas sont des choix de l'utilisateur. -->
@@ -1100,6 +1108,8 @@
 
                                 <p id="mining-model-summary" class="mining-model-summary"></p>
                                 <p id="mining-croisement-borne" class="mining-model-summary mining-avertissement"
+                                   role="status" hidden></p>
+                                <p id="mining-treillis-borne" class="mining-model-summary mining-avertissement"
                                    role="status" hidden></p>
                                 <!-- Des candidats ont ete ecartes faute d'apport
                                      suffisant. Un modele reduit par le plancher
@@ -1535,6 +1545,13 @@
                                             <i class="fas fa-tag" aria-hidden="true"></i>
                                             <span data-i18n-key="action.save">Enregistrer</span>
                                         </button>
+                                        <!-- Ce que le socle retire du mining, lisible sans
+                                             relancer une détection. Caché tant qu'aucun
+                                             droit socle n'est enregistré. -->
+                                        <button type="button" class="btn btn-secondary" id="birth-rights-show" hidden>
+                                            <i class="fas fa-list" aria-hidden="true"></i>
+                                            <span id="birth-rights-show-label"></span>
+                                        </button>
                                     </div>
                                     <div id="birth-rights-results" class="birth-rights-results mt-5" style="display:none;">
                                         <div class="birth-rights-stats-grid">
@@ -1945,9 +1962,9 @@
                                     </div>
 
                                     <div class="form-group mt-4 pt-3 separateur-au-dessus">
-                                        <label for="composer-extra-rights" class="form-label" data-i18n-key="form.manual_exceptions.label">Exceptions Manuelles (Liste ID)</label>
+                                        <label for="composer-extra-rights" class="form-label" data-i18n-key="form.manual_exceptions.label"></label>
                                         <textarea id="composer-extra-rights" class="form-textarea" rows="2" aria-describedby="composer-extra-rights-hint"></textarea>
-                                        <span id="composer-extra-rights-hint" class="form-hint" data-i18n-key="form.manual_exceptions.hint">Saisir les ID de droits séparés par une virgule pour les exceptions non listées.</span>
+                                        <span id="composer-extra-rights-hint" class="form-hint" data-i18n-key="form.manual_exceptions.hint"></span>
                                     </div>
                                 </div>
                             </div>
@@ -2351,14 +2368,14 @@
                                             <span id="cfg-apprentissage-regularisation-hint" class="form-hint" data-i18n-key="form.apprentissage_regularisation.hint"></span>
                                         </div>
                                         <div class="form-group">
-                                            <label for="cfg-sod-severites" class="form-label" data-i18n-key="form.sod_severites.label"></label>
-                                            <textarea id="cfg-sod-severites" class="form-input" rows="4" aria-describedby="cfg-sod-severites-hint"></textarea>
-                                            <span id="cfg-sod-severites-hint" class="form-hint" data-i18n-key="form.sod_severites.hint"></span>
+                                            <label for="cfg-profils-croises" class="form-label" data-i18n-key="form.profils_croises.label"></label>
+                                            <input type="number" id="cfg-profils-croises" class="form-input" min="0" step="1" aria-describedby="cfg-profils-croises-hint">
+                                            <span id="cfg-profils-croises-hint" class="form-hint" data-i18n-key="form.profils_croises.hint"></span>
                                         </div>
                                         <div class="form-group">
-                                            <label for="cfg-profils-croises" class="form-label" data-i18n-key="form.profils_croises.label">Croisement des profils — nombre de profils au-delà duquel il n'est pas tenté</label>
-                                            <input type="number" id="cfg-profils-croises" class="form-input" min="0" step="1" aria-describedby="cfg-profils-croises-hint">
-                                            <span id="cfg-profils-croises-hint" class="form-hint" data-i18n-key="form.profils_croises.hint">Le croisement compare les profils deux à deux : son coût croît comme le carré de leur nombre. Au-delà de cette borne le produit ne le tente pas et le dit à côté du résultat, plutôt que de faire attendre l'écran. Monter la borne cherche plus de rôles et allonge le calcul.</span>
+                                            <label for="cfg-treillis" class="form-label" data-i18n-key="form.treillis.label"></label>
+                                            <input type="number" id="cfg-treillis" class="form-input" min="0" step="1" aria-describedby="cfg-treillis-hint">
+                                            <span id="cfg-treillis-hint" class="form-hint" data-i18n-key="form.treillis.hint"></span>
                                         </div>
                                         <div class="form-group">
                                             <label for="cfg-apport-minimal" class="form-label" data-i18n-key="form.apport_minimal.label">Apport minimal d'un rôle</label>
@@ -2413,6 +2430,11 @@
                                                 </button>
                                             </div>
                                             <div id="cfg-sensitive-rights-proposal"></div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cfg-sod-severites" class="form-label" data-i18n-key="form.sod_severites.label"></label>
+                                            <textarea id="cfg-sod-severites" class="form-input" rows="4" aria-describedby="cfg-sod-severites-hint"></textarea>
+                                            <span id="cfg-sod-severites-hint" class="form-hint" data-i18n-key="form.sod_severites.hint"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -2679,7 +2701,7 @@
                                     <p class="form-hint" data-i18n-key="endpoints.description"></p>
                                     <div id="endpoints-volatile" class="alert alert-warning"
                                          hidden data-i18n-key="endpoints.keys_volatile"></div>
-                                    <div id="endpoints-presets" role="group"
+                                    <div id="endpoints-presets" class="pile-de-blocs" role="group"
                                          data-i18n-aria-label="endpoints.presets_title"></div>
                                     <div class="form-actions">
                                         <button type="button" class="btn btn-secondary"
@@ -2698,7 +2720,7 @@
                                                data-i18n-key="endpoints.common"></label>
                                         <select class="form-select" id="endpoints-common"></select>
                                     </div>
-                                    <div id="endpoints-uses" role="group"
+                                    <div id="endpoints-uses" class="pile-de-blocs" role="group"
                                          data-i18n-aria-label="endpoints.uses_title"></div>
                                     <div id="endpoints-warnings"></div>
                                     <div class="form-actions">
@@ -2719,7 +2741,7 @@
                                 </div>
                                 <div class="card-body">
                                     <p class="form-hint" data-i18n-key="assistance.description"></p>
-                                    <div id="assistance-usages" role="group"
+                                    <div id="assistance-usages" class="pile-de-blocs" role="group"
                                          data-i18n-aria-label="assistance.title"></div>
                                     <div id="assistance-warnings"></div>
                                 </div>
@@ -2896,7 +2918,7 @@
                                             <h3 class="file-config-title">
                                                 <i class="fas fa-users" aria-hidden="true"></i> <span data-i18n-key="file.identities.title">Identités</span>
                                             </h3>
-                                            <div class="file-config-grid">
+                                            <div class="file-config-grid file-config-grid--fichier">
                                                 <div class="form-group">
                                                     <label for="cfg-identities-path" class="form-label" data-i18n-key="form.path.label">Chemin</label>
                                                     <input type="text" id="cfg-identities-path" class="form-input" data-i18n-placeholder="settings.placeholder.path" placeholder="data/identities.csv">
@@ -2919,7 +2941,7 @@
                                             <h3 class="file-config-title">
                                                 <i class="fas fa-cubes" aria-hidden="true"></i> <span data-i18n-key="file.applications.title">Applications</span>
                                             </h3>
-                                            <div class="file-config-grid">
+                                            <div class="file-config-grid file-config-grid--fichier">
                                                 <div class="form-group">
                                                     <label for="cfg-applications-path" class="form-label" data-i18n-key="form.path.label">Chemin</label>
                                                     <input type="text" id="cfg-applications-path" class="form-input" data-i18n-placeholder="settings.placeholder.path" placeholder="data/applications.csv">
@@ -2942,7 +2964,7 @@
                                             <h3 class="file-config-title">
                                                 <i class="fas fa-key" aria-hidden="true"></i> <span data-i18n-key="file.rights.title">Droits</span>
                                             </h3>
-                                            <div class="file-config-grid">
+                                            <div class="file-config-grid file-config-grid--fichier">
                                                 <div class="form-group">
                                                     <label for="cfg-rights-path" class="form-label" data-i18n-key="form.path.label">Chemin</label>
                                                     <input type="text" id="cfg-rights-path" class="form-input" data-i18n-placeholder="settings.placeholder.path" placeholder="data/droits.csv">
@@ -2973,7 +2995,7 @@
                                             <h3 class="file-config-title">
                                                 <i class="fas fa-link" aria-hidden="true"></i> <span data-i18n-key="file.habs.title">Habilitations</span>
                                             </h3>
-                                            <div class="file-config-grid">
+                                            <div class="file-config-grid file-config-grid--fichier">
                                                 <div class="form-group">
                                                     <label for="cfg-habs-path" class="form-label" data-i18n-key="form.path.label">Chemin</label>
                                                     <input type="text" id="cfg-habs-path" class="form-input" data-i18n-placeholder="settings.placeholder.path" placeholder="data/habilitations.csv">
@@ -3127,13 +3149,40 @@
                         
                         <!-- Tab Content: Droits -->
                         <div id="app-tab-content-rights" class="tab-content active">
-                            <div class="bloc-espace-sous">
+                            <div class="role-validation__outils">
                                 <input 
                                     type="text" 
                                     id="app-rights-search" 
                                     class="form-input" 
                                     data-i18n-placeholder="search.right_placeholder" placeholder="Rechercher un droit…"
                                 >
+                                <button type="button" class="btn btn-secondary btn-sm" id="app-rights-reset"
+                                        data-i18n-title="table.reset.title" title="" disabled>
+                                    <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                                    <span data-i18n-key="table.reset.button"></span>
+                                </button>
+                                <div class="selecteur-de-colonnes">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            id="app-rights-columns-button"
+                                            aria-expanded="false"
+                                            aria-controls="app-rights-columns-panel">
+                                        <i class="fas fa-table-columns" aria-hidden="true"></i>
+                                        <span data-i18n-key="table.columns.button"></span>
+                                        <span class="selecteur-de-colonnes__compte"
+                                              id="app-rights-columns-count" hidden></span>
+                                    </button>
+                                    <div class="selecteur-de-colonnes__panneau"
+                                         id="app-rights-columns-panel" hidden>
+                                        <p class="selecteur-de-colonnes__titre"
+                                           data-i18n-key="table.columns.title"></p>
+                                        <div class="selecteur-de-colonnes__liste"
+                                             id="app-rights-columns-list" role="group"
+                                             data-i18n-aria-label="table.columns.title"></div>
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                id="app-rights-columns-all"
+                                                data-i18n-key="table.columns.show_all"></button>
+                                    </div>
+                                </div>
                             </div>
                             <p class="form-hint" id="app-rights-orphelins" hidden></p>
                             <div class="table-wrapper" role="region"
@@ -3163,12 +3212,39 @@
                         
                         <!-- Tab Content: Utilisateurs -->
                         <div id="app-tab-content-users" class="tab-content">
-                            <div class="bloc-espace-sous">
+                            <div class="role-validation__outils">
                                 <input 
                                     type="text" 
                                     id="app-users-search" 
                                     class="form-input" 
                                     data-i18n-placeholder="search.user_placeholder" placeholder="Rechercher un utilisateur…" aria-describedby="app-users-search-hint">
+                                <button type="button" class="btn btn-secondary btn-sm" id="app-users-reset"
+                                        data-i18n-title="table.reset.title" title="" disabled>
+                                    <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                                    <span data-i18n-key="table.reset.button"></span>
+                                </button>
+                                <div class="selecteur-de-colonnes">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            id="app-users-columns-button"
+                                            aria-expanded="false"
+                                            aria-controls="app-users-columns-panel">
+                                        <i class="fas fa-table-columns" aria-hidden="true"></i>
+                                        <span data-i18n-key="table.columns.button"></span>
+                                        <span class="selecteur-de-colonnes__compte"
+                                              id="app-users-columns-count" hidden></span>
+                                    </button>
+                                    <div class="selecteur-de-colonnes__panneau"
+                                         id="app-users-columns-panel" hidden>
+                                        <p class="selecteur-de-colonnes__titre"
+                                           data-i18n-key="table.columns.title"></p>
+                                        <div class="selecteur-de-colonnes__liste"
+                                             id="app-users-columns-list" role="group"
+                                             data-i18n-aria-label="table.columns.title"></div>
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                id="app-users-columns-all"
+                                                data-i18n-key="table.columns.show_all"></button>
+                                    </div>
+                                </div>
                             </div>
                             <p class="form-hint" id="app-users-orphelins" hidden></p>
                             <div class="table-wrapper" role="region"
@@ -3204,7 +3280,7 @@
                              contraintes sont les siennes, pas celles du
                              produit. -->
                         <div id="app-tab-content-explanation" class="tab-content">
-                            <div class="scroll-pane scroll-pane--tall">
+                            <div class="scroll-pane scroll-pane--tall scroll-pane--aere">
                                 <div class="form-group">
                                     <label id="app-explanation-attributes-label" class="form-label required" data-i18n-key="explanation.attributes.label">Attributs à croiser</label>
                                     <div id="app-explanation-attributes" class="attribute-checkboxes" role="group" aria-labelledby="app-explanation-attributes-label"></div>
@@ -3258,7 +3334,7 @@
                                      qu'il est désactivé plutôt que de rester
                                      vide sans explication. -->
                                 <div class="form-group" id="app-explanation-name-slot">
-                                    <label class="form-label" data-i18n-key="annotator.title">Nom proposé par un modèle</label>
+                                    <p class="form-label" data-i18n-key="annotator.title"></p>
                                     <!-- L'état dit ce qui quitterait le serveur
                                          AVANT qu'on l'envoie : un administrateur
                                          doit voir le geste qu'il pose. -->
@@ -3279,11 +3355,12 @@
                 </div>
                 
                 <div class="modal-footer modal-footer--reparti">
+                    <!-- L'icône fait partie de l'avertissement : seule, elle
+                         restait affichée en permanence et ne disait rien. -->
                     <div class="modal-footer__note">
-                        <i class="fas fa-info-circle" aria-hidden="true"></i>
-                        <span id="app-role-modification-warning" class="modal-footer__alerte"
-                              data-i18n-key="mining.role.will_be_rejected" hidden>
-                            Le rôle proposé sera refusé : des modifications ont été détectées.
+                        <span id="app-role-modification-warning" class="modal-footer__alerte" hidden>
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            <span data-i18n-key="mining.role.will_be_rejected"></span>
                         </span>
                     </div>
                     <div class="modal-footer__actions">
@@ -3390,13 +3467,40 @@
                         
                         <!-- Tab Content: Droits -->
                         <div id="biz-tab-content-rights" class="tab-content active">
-                            <div class="bloc-espace-sous">
+                            <div class="role-validation__outils">
                                 <input 
                                     type="text" 
                                     id="biz-rights-search" 
                                     class="form-input" 
                                     data-i18n-placeholder="search.right_placeholder" placeholder="Rechercher un droit…"
                                 >
+                                <button type="button" class="btn btn-secondary btn-sm" id="biz-rights-reset"
+                                        data-i18n-title="table.reset.title" title="" disabled>
+                                    <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                                    <span data-i18n-key="table.reset.button"></span>
+                                </button>
+                                <div class="selecteur-de-colonnes">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            id="biz-rights-columns-button"
+                                            aria-expanded="false"
+                                            aria-controls="biz-rights-columns-panel">
+                                        <i class="fas fa-table-columns" aria-hidden="true"></i>
+                                        <span data-i18n-key="table.columns.button"></span>
+                                        <span class="selecteur-de-colonnes__compte"
+                                              id="biz-rights-columns-count" hidden></span>
+                                    </button>
+                                    <div class="selecteur-de-colonnes__panneau"
+                                         id="biz-rights-columns-panel" hidden>
+                                        <p class="selecteur-de-colonnes__titre"
+                                           data-i18n-key="table.columns.title"></p>
+                                        <div class="selecteur-de-colonnes__liste"
+                                             id="biz-rights-columns-list" role="group"
+                                             data-i18n-aria-label="table.columns.title"></div>
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                id="biz-rights-columns-all"
+                                                data-i18n-key="table.columns.show_all"></button>
+                                    </div>
+                                </div>
                             </div>
                             <p class="form-hint" id="biz-rights-orphelins" hidden></p>
                             <div class="table-wrapper" role="region"
@@ -3426,13 +3530,40 @@
                         
                         <!-- Tab Content: Utilisateurs -->
                         <div id="biz-tab-content-users" class="tab-content">
-                            <div class="bloc-espace-sous">
+                            <div class="role-validation__outils">
                                 <input 
                                     type="text" 
                                     id="biz-users-search" 
                                     class="form-input" 
                                     data-i18n-placeholder="search.user_placeholder" placeholder="Rechercher un utilisateur…"
                                 >
+                                <button type="button" class="btn btn-secondary btn-sm" id="biz-users-reset"
+                                        data-i18n-title="table.reset.title" title="" disabled>
+                                    <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                                    <span data-i18n-key="table.reset.button"></span>
+                                </button>
+                                <div class="selecteur-de-colonnes">
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            id="biz-users-columns-button"
+                                            aria-expanded="false"
+                                            aria-controls="biz-users-columns-panel">
+                                        <i class="fas fa-table-columns" aria-hidden="true"></i>
+                                        <span data-i18n-key="table.columns.button"></span>
+                                        <span class="selecteur-de-colonnes__compte"
+                                              id="biz-users-columns-count" hidden></span>
+                                    </button>
+                                    <div class="selecteur-de-colonnes__panneau"
+                                         id="biz-users-columns-panel" hidden>
+                                        <p class="selecteur-de-colonnes__titre"
+                                           data-i18n-key="table.columns.title"></p>
+                                        <div class="selecteur-de-colonnes__liste"
+                                             id="biz-users-columns-list" role="group"
+                                             data-i18n-aria-label="table.columns.title"></div>
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                id="biz-users-columns-all"
+                                                data-i18n-key="table.columns.show_all"></button>
+                                    </div>
+                                </div>
                             </div>
                             <p class="form-hint" id="biz-users-orphelins" hidden></p>
                             <div class="table-wrapper" role="region"
@@ -3466,12 +3597,12 @@
                              à expliquer, seulement à dire ce que la règle
                              coûterait appliquée telle quelle. -->
                         <div id="biz-tab-content-diagnostic" class="tab-content">
-                            <div class="scroll-pane scroll-pane--tall">
+                            <div class="scroll-pane scroll-pane--tall scroll-pane--aere">
                                 <div class="explication__titre" data-i18n-key="explanation.diagnostic.label">Ce qui plaide pour, ce qui plaide contre</div>
                                 <ul id="biz-diagnostic-result" class="explication__diagnostic"></ul>
 
                                 <div class="form-group" id="biz-annotator-slot">
-                                    <label for="transformation-diff-search" class="form-label" data-i18n-key="annotator.title">Nom proposé par un modèle</label>
+                                    <p class="form-label" data-i18n-key="annotator.title"></p>
                                     <div id="biz-annotator-state" class="form-hint"></div>
                                     <div class="form-actions" id="biz-annotator-actions" hidden>
                                         <button class="btn btn-secondary" id="ask-biz-role-name">
@@ -3502,11 +3633,12 @@
                 </div>
                 
                 <div class="modal-footer modal-footer--reparti">
+                    <!-- L'icône fait partie de l'avertissement : seule, elle
+                         restait affichée en permanence et ne disait rien. -->
                     <div class="modal-footer__note">
-                        <i class="fas fa-info-circle" aria-hidden="true"></i>
-                        <span id="biz-role-modification-warning" class="modal-footer__alerte"
-                              data-i18n-key="mining.role.will_be_rejected" hidden>
-                            Le rôle proposé sera refusé : des modifications ont été détectées.
+                        <span id="biz-role-modification-warning" class="modal-footer__alerte" hidden>
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            <span data-i18n-key="mining.role.will_be_rejected"></span>
                         </span>
                     </div>
                     <div class="modal-footer__actions">
@@ -3520,6 +3652,83 @@
                             <span data-i18n-key="action.validate_and_save">Valider et enregistrer</span>
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Les droits socles enregistrés, avec les colonnes du référentiel
+             des droits : un identifiant seul ne dit pas ce qu'il ouvre. -->
+        <div class="modal-overlay" id="birth-rights-modal">
+            <div class="modal large" role="dialog" aria-modal="true" aria-labelledby="birth-rights-modal-title">
+                <div class="modal-header">
+                    <h2 id="birth-rights-modal-title" data-i18n-key="birth_rights.registered_title"></h2>
+                    <button class="modal-close" data-close-modal
+                            data-i18n-aria-label="action.close" aria-label="Fermer">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="form-hint" data-i18n-key="birth_rights.registered_description"></p>
+                    <div class="role-validation__outils">
+                        <input type="text" id="socles-search" class="form-input"
+                               data-i18n-placeholder="search.right_placeholder"
+                               data-i18n-aria-label="search.right_placeholder">
+                        <button type="button" class="btn btn-secondary btn-sm" id="socles-reset"
+                                data-i18n-title="table.reset.title" title="" disabled>
+                            <i class="fas fa-rotate-left" aria-hidden="true"></i>
+                            <span data-i18n-key="table.reset.button"></span>
+                        </button>
+                        <div class="selecteur-de-colonnes">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    id="socles-columns-button"
+                                    aria-expanded="false"
+                                    aria-controls="socles-columns-panel">
+                                <i class="fas fa-table-columns" aria-hidden="true"></i>
+                                <span data-i18n-key="table.columns.button"></span>
+                                <span class="selecteur-de-colonnes__compte"
+                                      id="socles-columns-count" hidden></span>
+                            </button>
+                            <div class="selecteur-de-colonnes__panneau"
+                                 id="socles-columns-panel" hidden>
+                                <p class="selecteur-de-colonnes__titre"
+                                   data-i18n-key="table.columns.title"></p>
+                                <div class="selecteur-de-colonnes__liste"
+                                     id="socles-columns-list" role="group"
+                                     data-i18n-aria-label="table.columns.title"></div>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        id="socles-columns-all"
+                                        data-i18n-key="table.columns.show_all"></button>
+                            </div>
+                        </div>
+                        <span class="table-count">
+                            <span id="socles-count">0</span> <span data-i18n-key="table.results"></span>
+                        </span>
+                    </div>
+                    <div class="table-wrapper table-wrapper--fenetre" role="region"
+                         data-i18n-aria-label="birth_rights.registered_title">
+                        <table class="data-table">
+                            <thead id="socles-thead"></thead>
+                            <tbody id="socles-list"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-pagination">
+                        <button class="pagination-btn" id="socles-prev" disabled>
+                            <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                            <span data-i18n-key="pagination.previous"></span>
+                        </button>
+                        <div class="pagination-info">
+                            <span data-i18n-key="pagination.page"></span>
+                            <span class="pagination-current" id="socles-current-page">1</span>
+                            <span data-i18n-key="pagination.of"></span>
+                            <span class="pagination-total" id="socles-total-pages">1</span>
+                        </div>
+                        <button class="pagination-btn" id="socles-next">
+                            <span data-i18n-key="pagination.next"></span>
+                            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary btn-sm" data-close-modal
+                            data-i18n-key="action.close"></button>
                 </div>
             </div>
         </div>
@@ -3554,7 +3763,8 @@
                 <div class="modal-body">
                     <div class="issue-details-toolbar">
                         <input type="search" id="transformation-diff-search" class="form-input"
-                               data-i18n-placeholder="quality.details.search">
+                               data-i18n-placeholder="quality.details.search"
+                               data-i18n-aria-label="quality.details.search">
                     </div>
                     <p class="issue-details-count" id="transformation-diff-count"></p>
                     <div id="transformation-diff-body" class="issue-details-list"></div>
@@ -3980,8 +4190,8 @@
         <div class="toast-container" id="toast-container" role="status"
              aria-live="polite" aria-relevant="additions"></div>
         <!-- Le pont se pose AVANT tout script du produit : l interface ne doit jamais voir le fetch d origine. -->
-    <script src="moteur/pyodide.js?v=bc97bd8e54c2"></script>
-    <script src="moteur/pont.js?v=bc97bd8e54c2"></script>
+    <script src="moteur/pyodide.js?v=0fb4a43e715a"></script>
+    <script src="moteur/pont.js?v=0fb4a43e715a"></script>
         <script src="vendor/chartjs/chart.umd.js?v=4.4.0"></script>
         <script src="js/config.js?v=4.4.0"></script>
         <script src="js/utils.js?v=4.4.0"></script>

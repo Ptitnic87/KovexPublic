@@ -52,6 +52,11 @@ const Config = {
     MINING_MIN_USERS: 5,
     MINING_MODE_DEFAULT: 'EXACT',
 	MINING_MAX_DEPTH: 6,
+
+    // Ensembles de droits contrôlés par appel à `/separation/controler`.
+    // C'est la borne du serveur (`ENSEMBLES_MAX`), qu'un test garde égale :
+    // au-delà, la demande est refusée en bloc et aucune carte n'est marquée.
+    SEPARATION_ENSEMBLES_PAR_APPEL: 200,
     
     // Local storage keys
     STORAGE_THEME: 'pygia_theme',
@@ -71,6 +76,11 @@ const Config = {
         applications: { title: 'nav.link.applications', icon: 'fa-cubes' },
         rights: { title: 'nav.link.rights', icon: 'fa-key' },
         'birth-rights': { title: 'nav.link.birth_rights', icon: 'fa-seedling' },
+        separation: { title: 'nav.separation', icon: 'fa-scale-balanced' },
+        'separation-conflits': { title: 'nav.separation_conflits', icon: 'fa-triangle-exclamation' },
+        mouvement: { title: 'nav.mouvement', icon: 'fa-right-left' },
+        usage: { title: 'nav.usage', icon: 'fa-hourglass-half' },
+        apprentissage: { title: 'nav.apprentissage', icon: 'fa-graduation-cap' },
         mining: { title: 'nav.link.mining_app', icon: 'fa-gem' },
         'mining-business': { title: 'nav.link.mining_business', icon: 'fa-sitemap' },
         'roles-catalog': { title: 'nav.link.roles_catalog', icon: 'fa-layer-group' },

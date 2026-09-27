@@ -1924,6 +1924,8 @@ const SettingsPage = {
         // écrit ici : le serveur en rend toujours une, et en inventer une côté
         // client afficherait une limite que le moteur n'applique pas.
         this.setFieldValue('cfg-profils-croises', config.mining_profils_croises_max);
+        // La borne du treillis, même règle : aucun repli écrit ici.
+        this.setFieldValue('cfg-treillis', config.mining_treillis_max);
         // Le plafond du nombre de rôles. Même règle : aucun repli écrit
         // ici, sans quoi l'écran afficherait une limite que le serveur
         // n'applique pas — et c'est exactement le défaut corrigé.
@@ -2312,6 +2314,8 @@ const SettingsPage = {
                 mining_min_rights: parseInt(this.getFieldValue('cfg-min-rights'), 10),
                 mining_profils_croises_max: parseInt(
                     this.getFieldValue('cfg-profils-croises'), 10),
+                mining_treillis_max: parseInt(
+                    this.getFieldValue('cfg-treillis'), 10),
                 mining_max_roles_plafond: parseInt(
                     this.getFieldValue('cfg-max-roles-plafond'), 10),
                 mining_apport_minimal: parseInt(

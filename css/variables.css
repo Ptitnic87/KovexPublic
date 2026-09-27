@@ -183,7 +183,11 @@
     --sidebar-width: 260px;
     --sidebar-collapsed-width: 72px;
     --topbar-height: 64px;
-    --container-max-width: 1400px;
+    /* Largeur utile d'une page. Elle était de 1 400 px : sur un écran large,
+       les tableaux et les paramètres se repliaient sur plusieurs lignes à
+       côté d'une marge vide. La lecture des paragraphes reste bornée à part
+       (`max-width` en `ch` sur les textes longs). */
+    --container-max-width: 1760px;
 }
 
 /* ==========================================================================

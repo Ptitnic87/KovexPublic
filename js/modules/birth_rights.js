@@ -20,6 +20,10 @@
 const BirthRightsManager = {
     detectedRights: [],
     currentThreshold: 90,
+    //: Les droits socles enregistrés — ce que le mining écarte aujourd'hui.
+    socles: [],
+    //: Le tableau de la fenêtre des socles, construit à la première ouverture.
+    tableauDesSocles: null,
 
     init() {
         this.bindEvents();
@@ -40,6 +44,62 @@ const BirthRightsManager = {
         if (nom) {
             nom.addEventListener('click', () => this.enregistrerLeNom());
         }
+
+        const voir = document.getElementById('birth-rights-show');
+        if (voir) {
+            voir.addEventListener('click', () => this.montrerLesSocles());
+        }
+    },
+
+    /**
+     * Le bouton qui ouvre la liste des socles dit combien il y en a, et
+     * n'apparaît que s'il y en a : un bouton qui ouvre une liste vide
+     * apprendrait à ne plus cliquer.
+     */
+    majBoutonDesSocles() {
+        const bouton = document.getElementById('birth-rights-show');
+        const libelle = document.getElementById('birth-rights-show-label');
+        if (!bouton) return;
+        bouton.hidden = this.socles.length === 0;
+        if (libelle) {
+            libelle.textContent = I18n.t('birth_rights.show_registered',
+                                         { count: Utils.formatNumber(this.socles.length) });
+        }
+    },
+
+    /**
+     * Les droits socles enregistrés, dans une fenêtre, avec les colonnes du
+     * référentiel des droits.
+     *
+     * La détection disait combien ; rien ne disait lesquels sans relancer
+     * l'export. Le tableau est celui des autres écrans — recherche, tri,
+     * choix des colonnes — et lit les identifiants enregistrés, pas ceux
+     * d'une détection en cours : c'est ce que le mining écarte vraiment.
+     */
+    montrerLesSocles() {
+        if (!this.tableauDesSocles) {
+            this.tableauDesSocles = new DataTable({
+                type: 'socles',
+                endpoint: '/referentiels/rights/lignes',
+                theadId: 'socles-thead',
+                tbodyId: 'socles-list',
+                searchId: 'socles-search',
+                countId: 'socles-count',
+                paginationPrefix: 'socles',
+                detail: false,
+                messageVide: 'birth_rights.none_registered',
+                corps: () => ({ identifiants: this.socles }),
+            });
+        }
+        const tableau = this.tableauDesSocles;
+        tableau.state.page = 1;
+        tableau.state.search = '';
+        tableau.state.sortCol = null;
+        tableau.state.sortDesc = false;
+        const recherche = document.getElementById('socles-search');
+        if (recherche) recherche.value = '';
+        tableau.load();
+        Modal.open('birth-rights-modal');
     },
 
     /**
@@ -56,6 +116,8 @@ const BirthRightsManager = {
             const info = await API.get('/kb/birth-rights/info');
             champ.value = info.name || '';
             this.currentThreshold = info.threshold || this.currentThreshold;
+            this.socles = Array.isArray(info.rights) ? info.rights.map(String) : [];
+            this.majBoutonDesSocles();
         } catch (erreur) {
             // L'écran sert d'abord à détecter : un nom illisible ne doit pas
             // empêcher la détection. Le champ reste vide, et l'enregistrer
@@ -130,9 +192,10 @@ const BirthRightsManager = {
 
             if (typeof KnowledgeBase !== 'undefined' && KnowledgeBase.setBirthRights) {
                 try {
-                    await KnowledgeBase.setBirthRights(
-                        this.detectedRights.map(droit => droit.ID_droit || droit),
-                        seuil);
+                    const enregistres = this.detectedRights.map(droit => String(droit.ID_droit || droit));
+                    await KnowledgeBase.setBirthRights(enregistres, seuil);
+                    this.socles = enregistres;
+                    this.majBoutonDesSocles();
                 } catch (erreur) {
                     // La détection reste exploitable si l'enregistrement
                     // échoue ; on le dit plutôt que de l'ignorer.

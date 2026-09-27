@@ -1224,11 +1224,75 @@
 }
 
 /* ===== Settings ===== */
+/* Les paramètres prennent toute la largeur de la page. Bornés à 900 px, ils
+   repliaient leurs libellés sur deux ou trois lignes, et les champs d'une même
+   rangée ne s'alignaient plus. */
 .settings-container {
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
-    max-width: 900px;
+}
+
+/* Les paramètres globaux s'alignent par rangée : libellés, champs et aides
+   d'une même rangée partagent les mêmes lignes de grille (`subgrid`). Un
+   libellé de trois lignes allonge la ligne des libellés de sa rangée, et tous
+   les champs restent alignés en dessous — là où, avant, il descendait seul.
+
+   Cinq lignes par paramètre : libellé, champ, aide, et deux de réserve pour
+   les paramètres qui portent une action ou un détail. Une ligne sans contenu
+   ne prend aucune hauteur ; l'écart entre paramètres est donc porté par la
+   marge de chacun, et non par l'écart de grille. Sans `subgrid`, chaque
+   paramètre reste une colonne ordinaire : rien ne casse, rien ne s'aligne. */
+#page-settings .settings-grid { row-gap: 0; }
+
+#page-settings .settings-grid > .form-group {
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+    align-content: start;
+    margin-bottom: var(--space-5);
+}
+
+/* Chaque élément garde sa hauteur : un champ ne s'étire pas à la hauteur de
+   la plus longue aide de sa rangée. Le libellé, lui, se pose contre le champ. */
+#page-settings .settings-grid > .form-group > * { align-self: start; }
+#page-settings .settings-grid > .form-group > :first-child { align-self: end; }
+
+/* Une case à cocher n'a pas de champ : son aide va sur la ligne des aides,
+   pas sur celle des champs, dont elle fixerait sinon la hauteur. */
+#page-settings .settings-grid > .form-group > .chart-option:first-child + .form-hint {
+    grid-row: 3;
+}
+
+/* Une zone de texte — une liste, une valeur par ligne — est plus haute
+   qu'un champ. Dans une rangée alignée, elle faisait descendre toutes les
+   aides à sa hauteur, loin de leur champ. Elle prend donc sa propre rangée,
+   à la largeur d'une liste et non de la page. */
+#page-settings .settings-grid > .form-group:has(> textarea) { grid-column: 1 / -1; }
+#page-settings .settings-grid > .form-group > textarea { max-width: 36rem; }
+#page-settings .settings-grid > .form-group > textarea + .form-hint { max-width: 72ch; }
+
+/* Ailleurs dans les paramètres — préréglages, fichiers —, les libellés sont
+   courts : deux lignes réservées suffisent à aligner une rangée. `2lh` suit
+   la hauteur de ligne réelle. */
+#page-settings :is(.form-row, .file-config-grid) > .form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+#page-settings :is(.form-row, .file-config-grid) > .form-group > .form-label:first-child {
+    min-height: 2lh;
+    display: flex;
+    align-items: flex-end;
+}
+
+/* Les blocs d'une liste — préréglages de modèle, usages — se suivent avec
+   de l'air : collés, on ne voyait plus où l'un finissait. */
+.pile-de-blocs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-block: var(--space-4);
 }
 
 .settings-section {
@@ -1273,6 +1337,18 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
     gap: var(--space-3);
+}
+
+/* Un fichier source : le chemin est long, le délimiteur tient en un
+   caractère. Des colonnes égales coupaient le chemin à vingt caractères pour
+   laisser au délimiteur la place d'une phrase. */
+.file-config-grid--fichier {
+    grid-template-columns: minmax(0, 3fr) minmax(6rem, 0.6fr) minmax(7rem, 0.8fr) minmax(0, 1.6fr);
+}
+
+@media (max-width: 900px) {
+    .file-config-grid--fichier { grid-template-columns: 1fr 1fr; }
+    .file-config-grid--fichier > .form-group:first-child { grid-column: 1 / -1; }
 }
 
 .settings-actions {
@@ -2966,13 +3042,25 @@
     flex-shrink: 0;
 }
 
+/* Le cadre et ses anneaux sont en retrait — trait fin, pointillé pour les
+   anneaux — et le candidat par-dessus, trait plus épais et sommets marqués :
+   un candidat proche de 100 se confondait avec le cadre. */
 .toile__cadre {
     fill: none;
     stroke: var(--border-secondary);
+    stroke-width: 0.5;
+}
+
+.toile__graduation {
+    fill: none;
+    stroke: var(--border-secondary);
+    stroke-width: 0.4;
+    stroke-dasharray: 1 1.5;
 }
 
 .toile__axe {
     stroke: var(--border-secondary);
+    stroke-width: 0.4;
 }
 
 .toile__reference {
@@ -2985,6 +3073,13 @@
     fill: var(--accent-primary);
     fill-opacity: 0.25;
     stroke: var(--encre-primary);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+}
+
+.toile__sommet {
+    r: 2;
+    fill: var(--encre-primary);
 }
 
 .apprentissage-toile {
@@ -3003,3 +3098,30 @@
     padding: var(--space-3);
     margin: var(--space-3) 0;
 }
+
+/* ===== Colonnes dont les valeurs peuvent sortir ===== */
+/* Le cadre n'avait aucune marge intérieure : la légende, la phrase et les
+   cases collaient à son bord gauche. */
+.file-config__colonnes {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-5) var(--space-4);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+}
+
+.file-config__colonnes > legend {
+    padding: 0 var(--space-2);
+    margin-bottom: 0;
+}
+
+/* ===== Message d'une liste vide, dans une zone de choix ===== */
+/* La classe était employée par le compositeur sans être définie : « Aucun
+   rôle applicatif disponible » collait au bord de sa zone. */
+.empty-state-mini {
+    padding: var(--space-4) var(--space-5);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+}
+
+.empty-state-mini p { margin: 0; }

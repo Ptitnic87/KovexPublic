@@ -223,10 +223,29 @@ const WorkspaceManager = {
         
         if (nameEl) {
             if (this.currentWorkspace) {
-                nameEl.textContent = this.currentWorkspace.name;
+                this.nommerLaBarre(nameEl, this.currentWorkspace.name, null);
             } else {
-                nameEl.textContent = I18n.t('workspace.select');
+                this.nommerLaBarre(nameEl, I18n.t('workspace.select'), 'workspace.select');
             }
+        }
+    },
+
+    /**
+     * Écrit le libellé de la barre et dit à I18n s'il doit le retraduire.
+     *
+     * Le gabarit porte une clé de traduction pour l'état initial. Laissée en
+     * place, elle faisait réécrire « Sélectionner un workspace » par-dessus
+     * le nom du workspace actif à chaque passage d'`applyTranslations` —
+     * un changement de langue, ou le premier rendu après le chargement.
+     * Le nom d'un workspace ne se traduit pas : la clé ne reste que tant
+     * que la barre affiche un message du produit.
+     */
+    nommerLaBarre(nameEl, texte, cle) {
+        nameEl.textContent = texte;
+        if (cle) {
+            nameEl.setAttribute('data-i18n-key', cle);
+        } else {
+            nameEl.removeAttribute('data-i18n-key');
         }
     },
     
@@ -238,7 +257,7 @@ const WorkspaceManager = {
         ThemeVisuel.appliquer(null);
         const nameEl = document.getElementById('current-workspace-name');
         if (nameEl) {
-            nameEl.textContent = I18n.t('workspace.none');
+            this.nommerLaBarre(nameEl, I18n.t('workspace.none'), 'workspace.none');
         }
         
         const container = document.getElementById('workspace-list');

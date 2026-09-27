@@ -17,6 +17,10 @@ const ControlesPage = {
     aujourdhui: '',
     //: Le contrôle dont le formulaire d'exécution est ouvert. Un seul à la fois.
     enExecution: '',
+    //: Les identifiants que le serveur connaît. Un contrôle ajouté à l'écran
+    //: n'existe pour lui qu'une fois enregistré : consigner une exécution
+    //: avant cela échouait sur « le contrôle … n'existe pas ».
+    enregistres: new Set(),
     branche: false,
 
     async init() {
@@ -58,6 +62,7 @@ const ControlesPage = {
         try {
             const rendu = await API.get('/controles');
             this.catalogue = (rendu.controles || []).map((controle) => ({...controle}));
+            this.retenirLesEnregistres();
             this.resultats = rendu.resultats || [];
             this.aujourdhui = rendu.aujourdhui || '';
         } catch (erreur) {
@@ -65,6 +70,10 @@ const ControlesPage = {
             return;
         }
         this.render();
+    },
+
+    retenirLesEnregistres() {
+        this.enregistres = new Set(this.catalogue.map((controle) => controle.id));
     },
 
     /** Un identifiant qui ne ressemble à rien de métier, comme les règles. */
@@ -109,6 +118,7 @@ const ControlesPage = {
         try {
             const rendu = await API.put('/controles', {controles: envoi});
             this.catalogue = rendu.controles || [];
+            this.retenirLesEnregistres();
         } catch (erreur) {
             Toast.error(I18n.t('common.error'), erreur.message);
             return;
@@ -119,6 +129,7 @@ const ControlesPage = {
     },
 
     ouvrirLExecution(identifiant) {
+        if (!this.enregistres.has(identifiant)) return;
         this.enExecution = identifiant;
         this.render();
         const date = document.getElementById('controle-execute-le');
@@ -187,6 +198,7 @@ const ControlesPage = {
             </div>`;
         const derniere = controle.derniere_execution;
         const raisons = controle.raisons || [];
+        const enregistre = this.enregistres.has(controle.id);
         return `
             <div class="controle" data-controle-bloc="${id}">
                 ${champ('libelle', 'controle.label')}
@@ -212,12 +224,15 @@ const ControlesPage = {
                         <span>${Utils.escapeHtml(I18n.t('controle.active'))}</span>
                     </label>
                     <button type="button" class="btn btn-secondary btn-sm"
-                            data-controle-executer="${id}">${
+                            data-controle-executer="${id}"${enregistre ? '' : `
+                            disabled aria-describedby="controle-a-enregistrer-${id}"`}>${
                         Utils.escapeHtml(I18n.t('controle.record_execution'))}</button>
                     <button type="button" class="btn btn-secondary btn-sm"
                             data-controle-retirer="${id}">${
                         Utils.escapeHtml(I18n.t('controle.remove'))}</button>
                 </div>
+                ${enregistre ? '' : `<p class="form-hint" id="controle-a-enregistrer-${id}">${
+                    Utils.escapeHtml(I18n.t('controle.save_first'))}</p>`}
                 ${this.enExecution === controle.id ? this.renderLExecution(controle) : ''}
             </div>`;
     },

@@ -1683,9 +1683,12 @@ const MiningPage = {
      * découvre pas au moment de le valider, sinon on a déjà relu sa population
      * pour rien.
      *
-     * Un seul appel pour toute la liste. Contrôler carte par carte ferait
-     * autant d'allers et retours que de candidats, et l'écran se marquerait
-     * ligne à ligne sous les yeux de l'utilisateur.
+     * Les candidats partent par paquets, à la taille que le serveur accepte,
+     * tous en même temps. Contrôler carte par carte ferait autant d'allers et
+     * retours que de candidats ; tout envoyer d'un bloc faisait refuser la
+     * demande au-delà de 200 candidats, et le marqueur disparaissait sans un
+     * mot sur les résultats les plus fournis — là où il sert le plus. Un
+     * paquet refusé ne prive que ses propres cartes du marqueur.
      *
      * Les membres ne partent pas : la carte n'a besoin que de savoir s'il y a
      * conflit, et relever les détenteurs pour le chiffrer coûterait le prix
@@ -1698,29 +1701,33 @@ const MiningPage = {
             .filter((ensemble) => ensemble.droits.length);
         if (!ensembles.length) return;
         const jeton = (this.jetonDesCartes = (this.jetonDesCartes || 0) + 1);
-        let rendu;
-        try {
-            rendu = await API.controlerLaSeparation(ensembles);
-        } catch (erreur) {
-            return;
+        const taille = Config.SEPARATION_ENSEMBLES_PAR_APPEL;
+        const paquets = [];
+        for (let debut = 0; debut < ensembles.length; debut += taille) {
+            paquets.push(ensembles.slice(debut, debut + taille));
         }
+        const rendus = await Promise.allSettled(
+            paquets.map((paquet) => API.controlerLaSeparation(paquet)));
         // La liste a pu être réécrite par un autre calcul entre-temps : marquer
         // alors des cartes qui ne sont plus les mêmes désignerait les mauvaises.
         if (jeton !== this.jetonDesCartes || !container.isConnected) return;
-        (rendu.ensembles || []).forEach((ensemble) => {
-            if (!(ensemble.regles || []).length) return;
-            const carte = container.querySelector(
-                `.mining-role-card[data-index="${ensemble.cle}"]`);
-            if (!carte || carte.querySelector('.mining-role-sod')) return;
-            const stats = carte.querySelector('.mining-role-stats');
-            if (!stats) return;
-            stats.insertAdjacentHTML('beforeend', `
-                <span class="mining-role-stat mining-role-stat--warned mining-role-sod">
-                    <i class="fas fa-scale-balanced" aria-hidden="true"></i>
-                    ${Utils.escapeHtml(I18n.t('mining.separation_flagged',
-                                              {count: ensemble.regles.length}))}
-                </span>`);
-        });
+        rendus
+            .filter((issue) => issue.status === 'fulfilled')
+            .flatMap((issue) => issue.value.ensembles || [])
+            .forEach((ensemble) => {
+                if (!(ensemble.regles || []).length) return;
+                const carte = container.querySelector(
+                    `.mining-role-card[data-index="${ensemble.cle}"]`);
+                if (!carte || carte.querySelector('.mining-role-sod')) return;
+                const stats = carte.querySelector('.mining-role-stats');
+                if (!stats) return;
+                stats.insertAdjacentHTML('beforeend', `
+                    <span class="mining-role-stat mining-role-stat--warned mining-role-sod">
+                        <i class="fas fa-scale-balanced" aria-hidden="true"></i>
+                        ${Utils.escapeHtml(I18n.t('mining.separation_flagged',
+                                                  {count: ensemble.regles.length}))}
+                    </span>`);
+            });
     },
 
     /**
@@ -2194,6 +2201,19 @@ const MiningPage = {
                     else { etat.gardes.delete(identifiant); }
                     this.detectModification(prefix);
                 },
+                // Tout le rôle, pas la page : décocher cinq cents porteurs
+                // un par un n'était pas une option.
+                tout: (coche) => {
+                    const etat = this.retenus[cle];
+                    if (!etat) return;
+                    etat.gardes = new Set(coche ? etat.tous : []);
+                    this.detectModification(prefix);
+                },
+                etat: () => {
+                    const etat = this.retenus[cle];
+                    if (!etat || etat.gardes.size === 0) return 'aucun';
+                    return etat.gardes.size === etat.tous.length ? 'tous' : 'partiel';
+                },
             },
         });
         this.tableauxDeValidation[cle] = tableau;
@@ -2421,16 +2441,22 @@ const MiningPage = {
         
         if (!role) return;
         
-        const confirme = await Confirm.demander({
+        // Le motif est exigé : un refus est définitif et se relit dans la
+        // piste d'audit, où « motif : » vide ne dit rien à personne.
+        const motif = await Confirm.demander({
             titre: I18n.t('confirm.reject_role_title'),
             message: I18n.t('confirm.reject_business_role'),
             confirmer: I18n.t('confirm.reject_action'),
             danger: true,
+            saisie: {label: I18n.t('confirm.reject_reason')},
         });
-        if (!confirme) return;
+        if (!motif) return;
         
         try {
-            await KnowledgeBase.rejectRole(role.id);
+            // Un refus d'analyste est une décision : ses indicateurs vont à
+            // l'apprentissage, comme pour un rôle applicatif.
+            await KnowledgeBase.rejectRole(
+                role.id, motif, this.indicateursDeDecision(role));
             // Un mining, une validation ou un refus changent ce qu'il reste
             // à décider : l'indicateur suit l'action, sans rechargement.
             if (typeof Cloche !== 'undefined') Cloche.rafraichir();
@@ -2716,11 +2742,16 @@ const MiningPage = {
             const plafond = point.capped
                 ? `<i class="fas fa-exclamation-triangle threshold-capped" title="${Utils.escapeHtml(I18n.t('threshold.capped'))}" aria-hidden="true"></i>`
                 : '';
+            // Le titre porte la phrase pour la souris, le texte masqué pour
+            // un lecteur d'écran : l'icône seule n'est pas une information.
+            const treillis = point.treillis_borne === true
+                ? `<span class="threshold-treillis" title="${Utils.escapeHtml(I18n.t('threshold.treillis_borne'))}"><i class="fas fa-diagram-project" aria-hidden="true"></i><span class="sr-only">${Utils.escapeHtml(I18n.t('threshold.treillis_borne'))}</span></span>`
+                : '';
 
             return `
                 <tr class="${classes.join(' ')}">
                     <td>${Utils.escapeHtml(String(point.threshold))}</td>
-                    <td>${Utils.escapeHtml(String(point.roles))} ${plafond}</td>
+                    <td>${Utils.escapeHtml(String(point.roles))} ${plafond}${treillis}</td>
                     <td>${Utils.escapeHtml(String(point.coverage_pct))} %</td>
                     <td>${Utils.escapeHtml(String(point.over_granted_pct))} %</td>
                     <td>${Utils.escapeHtml(String(point.elapsed_ms))} ms</td>
@@ -3317,6 +3348,16 @@ const MiningPage = {
             const nonTente = (stats.engine || {}).croisement_borne === true;
             borne.hidden = !nonTente;
             borne.textContent = nonTente ? I18n.t('mining.croisement_borne') : '';
+        }
+
+        // Le treillis s'est arrêté sur sa borne : le nombre de rôles n'est
+        // pas le plus petit que ces données admettent, et le taire le ferait
+        // lire comme tel.
+        const treillis = document.getElementById('mining-treillis-borne');
+        if (treillis) {
+            const arrete = (stats.engine || {}).treillis_borne === true;
+            treillis.hidden = !arrete;
+            treillis.textContent = arrete ? I18n.t('mining.treillis_borne') : '';
         }
 
         // Des candidats écartés faute d'apport suffisant : le dire aussi. Un
@@ -4490,17 +4531,18 @@ const MiningPage = {
         
         if (!role) return;
         
-        const confirme = await Confirm.demander({
+        const motif = await Confirm.demander({
             titre: I18n.t('confirm.reject_role_title'),
             message: I18n.t('confirm.reject_app_role'),
             confirmer: I18n.t('confirm.reject_action'),
             danger: true,
+            saisie: {label: I18n.t('confirm.reject_reason')},
         });
-        if (!confirme) return;
+        if (!motif) return;
         
         try {
             await KnowledgeBase.rejectRole(
-                role.id, '', this.indicateursDeDecision(role));
+                role.id, motif, this.indicateursDeDecision(role));
             // Un mining, une validation ou un refus changent ce qu'il reste
             // à décider : l'indicateur suit l'action, sans rechargement.
             if (typeof Cloche !== 'undefined') Cloche.rafraichir();

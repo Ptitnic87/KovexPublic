@@ -344,6 +344,9 @@ class DataTable {
             || `${this.paginationPrefix}-columns-count`;
         this.columnsAllId = options.columnsAllId
             || `${this.paginationPrefix}-columns-all`;
+        //: Le bouton qui rend l'ordre et la recherche d'origine. Facultatif :
+        //  le tableau fonctionne sans, et n'en cherche un que s'il existe.
+        this.resetId = options.resetId || `${this.paginationPrefix}-reset`;
 
         const retenu = DataTable.reglagesRetenus(this.type);
         this.state = {
@@ -392,8 +395,79 @@ class DataTable {
                 const case_ = evenement.target.closest('[data-selection]');
                 if (!case_) return;
                 this.selection.basculer(case_.dataset.selection, case_.checked);
+                this.majCaseTout();
             });
         }
+
+        // La case de l'en-tête coche ou décoche **toutes** les lignes, pas
+        // seulement celles de la page : la sélection vit hors du tableau, et
+        // c'est elle qui décide de ce qui sera validé. L'en-tête est réécrit
+        // à chaque chargement, d'où la délégation.
+        const thead = document.getElementById(this.theadId);
+        if (thead && this.peutToutSelectionner()) {
+            thead.addEventListener('change', (evenement) => {
+                const case_ = evenement.target.closest('[data-selection-tout]');
+                if (!case_) return;
+                this.selection.tout(case_.checked);
+                if (tbody) {
+                    tbody.querySelectorAll('[data-selection]').forEach((ligne) => {
+                        ligne.checked = case_.checked;
+                    });
+                }
+                this.majCaseTout();
+            });
+        }
+
+        const reinitialisation = document.getElementById(this.resetId);
+        if (reinitialisation) {
+            reinitialisation.addEventListener('click', () => this.reinitialiser());
+        }
+    }
+
+    /**
+     * Rend l'ordre et la recherche d'origine.
+     *
+     * Trier par une colonne, puis par une autre, puis chercher : il n'y avait
+     * plus de chemin pour revenir à la liste telle qu'elle s'ouvre, sinon
+     * fermer la fenêtre et perdre ce qu'on avait décoché.
+     */
+    reinitialiser() {
+        this.state.search = '';
+        this.state.sortCol = null;
+        this.state.sortDesc = false;
+        this.state.page = 1;
+        const recherche = document.getElementById(this.searchId);
+        if (recherche) recherche.value = '';
+        this.load();
+    }
+
+    /** Le bouton de réinitialisation n'est actif que s'il y a de quoi faire. */
+    majReinitialisation() {
+        const bouton = document.getElementById(this.resetId);
+        if (!bouton) return;
+        bouton.disabled = !this.state.search && !this.state.sortCol;
+    }
+
+    /** La sélection sait-elle tout cocher et dire où elle en est ? */
+    peutToutSelectionner() {
+        return Boolean(this.selection
+            && typeof this.selection.tout === 'function'
+            && typeof this.selection.etat === 'function');
+    }
+
+    /**
+     * L'état de la case de l'en-tête : cochée si tout est retenu, vide si rien
+     * ne l'est, indéterminée entre les deux — l'état qu'un tableau à cases
+     * annonce partout ailleurs.
+     */
+    majCaseTout() {
+        if (!this.peutToutSelectionner()) return;
+        const thead = document.getElementById(this.theadId);
+        const case_ = thead && thead.querySelector('[data-selection-tout]');
+        if (!case_) return;
+        const etat = this.selection.etat();
+        case_.checked = etat === 'tous';
+        case_.indeterminate = etat === 'partiel';
     }
 
     async load() {
@@ -401,6 +475,7 @@ class DataTable {
         const thead = document.getElementById(this.theadId);
         
         if (!tbody) return;
+        this.majReinitialisation();
 
         tbody.innerHTML = `
             <tr>
@@ -882,7 +957,17 @@ Object.assign(DataTable.prototype, {
      */
     enteteDeSelection() {
         if (!this.selection) return '';
+        // L'en-tête de la colonne de sélection avait l'air d'un bouton — il en
+        // avait le curseur et le survol — sans rien faire. Il porte désormais
+        // la case « tout cocher » quand la sélection sait le faire, et
+        // seulement le nom de la colonne sinon.
+        const tout = this.peutToutSelectionner()
+            ? `<input type="checkbox" data-selection-tout aria-label="${
+                Utils.escapeHtml(I18n.t('table.selection.all'))}" title="${
+                Utils.escapeHtml(I18n.t('table.selection.all'))}">`
+            : '';
         return `<th scope="col" class="colonne-selection">
+                    ${tout}
                     <span class="sr-only">${Utils.escapeHtml(
                         I18n.t('table.selection.column'))}</span>
                 </th>`;
@@ -917,6 +1002,8 @@ Object.assign(DataTable.prototype, {
                 }).join('')}
             </tr>
         `;
+
+        this.majCaseTout();
 
         thead.querySelectorAll('th[data-column]').forEach((th, rang) => {
             th.addEventListener('click', () => {
